@@ -1,0 +1,60 @@
+name: Manage AWS Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select the environment to deploy to'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - production
+          - development
+      command:
+        description: 'Select the command to run'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+          
+env:
+  AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ github.event.inputs.environment == 'production' && secrets.PROD_AWS_ACCESS_KEY_ID || secrets.DEV_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ github.event.inputs.environment == 'production' && secrets.PROD_AWS_SECRET_ACCESS_KEY || secrets.DEV_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_DEFAULT_REGION }}
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init -backend-config=envs/${{ github.event.inputs.environment }}/backend.hcl
+
+      - name: Terraform command
+        working-directory: terraform
+        run: |
+          if [ "${{ github.event.inputs.command }}" == "plan" ]; then
+            terraform plan 
+          fi
+          if [ "${{ github.event.inputs.command }}" == "apply" ]; then
+            terraform apply -auto-approve
+          fi
+          if [ "${{ github.event.inputs.command }}" == "destroy" ]; then
+            terraform destroy -auto-approve
+          fi
