@@ -30,20 +30,26 @@ jobs:
           aws-secret-access-key: ${{ github.event.inputs.environment == 'production' && secrets.PROD_AWS_SECRET_ACCESS_KEY || secrets.DEV_AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_DEFAULT_REGION }}
 
-      - name: Build
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: frontend/hvac/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/hvac
+        run: npm ci
+
+      - name: Build
         working-directory: frontend/hvac
         run: ng build --configuration "${{ github.event.inputs.environment }}"
    
-
       - name: Copy files to S3
         working-directory: frontend/hvac
         run: |
           if [ "${{ github.event.inputs.environment }}" == "production" ]; then
-            aws s3 sync dist/browser/hvac s3://${{ vars.PROD_S3_BUCKET_FRONTEND }} --delete
+            aws s3 sync dist/hvac/browser s3://${{ vars.PROD_S3_BUCKET_FRONTEND }} --delete
           else
-            aws s3 sync dist/browser/hvac s3://${{ vars.DEV_S3_BUCKET_FRONTEND }} --delete
+            aws s3 sync dist/hvac/browser s3://${{ vars.DEV_S3_BUCKET_FRONTEND }} --delete
           fi
