@@ -54,3 +54,20 @@ jobs:
           else
             aws s3 sync dist/hvac/browser s3://${{ vars.DEV_S3_BUCKET_FRONTEND }} --delete
           fi
+
+      - name: Invalidate CloudFront cache
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            distribution_id="${{ vars.PROD_CLOUDFRONT_DISTRIBUTION_ID }}"
+          else
+            distribution_id="${{ vars.DEV_CLOUDFRONT_DISTRIBUTION_ID }}"
+          fi
+
+          if [ -z "$distribution_id" ]; then
+            echo "CloudFront distribution ID is not configured for this environment. Skipping invalidation."
+            exit 0
+          fi
+
+          aws cloudfront create-invalidation \
+            --distribution-id "$distribution_id" \
+            --paths "/" "/index.html"
