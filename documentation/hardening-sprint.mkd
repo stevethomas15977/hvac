@@ -1,0 +1,96 @@
+# Dev Environment Hardening Plan (Step-by-Step)
+
+## Step 0: Preflight Decisions
+1. Confirm the Dev public URL (for example: `dev.softwarelikeyou.com`).
+2. Confirm DNS ownership model:
+   - Option A: Terraform can assume role into the Route53 account.
+   - Option B: DNS records are applied manually in the Route53 account.
+3. Confirm ACM validation model:
+   - Automated via cross-account role, or
+   - Manual DNS CNAME entry.
+
+## Step 1: Baseline and Freeze
+1. Create a short-lived infra branch.
+2. Freeze functional feature work during this sprint window.
+3. Capture current baseline:
+   - Terraform outputs
+   - Current workflow behavior (terraform.yaml, frontend.yaml).
+
+## Step 2: Add CloudFront Front Door
+1. Add Terraform resources for:
+   - CloudFront distribution
+   - Origin Access Control (preferred)
+   - S3 bucket policy allowing CloudFront only
+   - SPA fallback behavior (`403/404 -> /index.html` with `200`)
+2. Add cache strategy:
+   - `index.html` low TTL
+   - hashed static assets long TTL
+3. Add response headers policy (security baseline).
+
+## Step 3: Add ACM Certificate (us-east-1)
+1. Request ACM cert in `us-east-1` for Dev domain.
+2. Validate cert via DNS CNAME.
+3. If Route53 is cross-account and not automated, apply CNAME manually.
+4. Attach validated cert to CloudFront.
+
+## Step 4: Route53 Alias to CloudFront
+1. Create alias `A/AAAA` record from Dev domain to CloudFront.
+2. If cross-account manual, apply provided records in Route53 account.
+3. Verify DNS resolves to CloudFront distribution.
+
+## Step 5: Repoint Cognito Redirects to HTTPS Dev Domain
+1. Update `DEV_FRONTEND_BASE_URL` GitHub variable to HTTPS Dev domain.
+2. Keep localhost redirects for local development.
+3. Run Terraform apply to update Cognito callback/logout allow-lists.
+
+## Step 6: Mature Frontend Deploy Workflow
+1. Update frontend.yaml to:
+   - deploy build artifacts to S3 origin bucket
+   - run CloudFront invalidation post-deploy
+2. Invalidate at minimum:
+   - `/`
+   - `/index.html`
+   - optionally all paths initially.
+
+## Step 7: End-to-End Validation
+1. Open Dev HTTPS URL and confirm app loads.
+2. Test deep links:
+   - `/app/dashboard`
+   - `/callback`
+   - `/logout`
+3. Test Hosted UI sign-in redirect and return.
+4. Test sign-out return.
+5. Confirm no HTTP S3 website callback is used.
+6. Verify Terraform outputs show expected callback/logout URLs.
+
+## Step 8: CI/CD Guardrails
+1. Add post-deploy smoke checks:
+   - root returns `200`
+   - response contains app shell.
+2. Add workflow output summary:
+   - deployed URL
+   - CloudFront distribution ID
+   - invalidation ID.
+
+## Step 9: Rollback Plan
+1. Record previous DNS target before cutover.
+2. Rollback approach:
+   - repoint Route53 alias
+   - redeploy previous artifact
+   - rerun invalidation.
+3. Keep localhost Cognito redirects for emergency local demo fallback.
+
+## Step 10: Sign-Off Checklist
+1. Deployed login flow uses HTTPS only.
+2. CloudFront is active front door.
+3. Cognito callback/logout use HTTPS Dev domain.
+4. SPA refresh/deep links work.
+5. Dev workflow deploy is repeatable and stable.
+
+---
+
+## Recommended Execution Order
+1. CloudFront + ACM + DNS
+2. Cognito redirect updates
+3. Frontend workflow invalidation + smoke checks
+4. Final end-to-end auth validation

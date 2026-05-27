@@ -55,6 +55,9 @@ jobs:
             base_url="${{ vars.PROD_FRONTEND_BASE_URL }}"
           else
             base_url="${{ vars.DEV_FRONTEND_BASE_URL }}"
+            if [[ -z "$base_url" ]]; then
+              base_url="https://hvac-dev.softwarelikeyou.com"
+            fi
           fi
 
           base_url="${base_url%/}"
