@@ -2,8 +2,30 @@ data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
 
+variable "cognito_additional_callback_urls" {
+  description = "Additional callback URLs for deployed frontend environments."
+  type        = list(string)
+  default     = []
+}
+
+variable "cognito_additional_logout_urls" {
+  description = "Additional logout URLs for deployed frontend environments."
+  type        = list(string)
+  default     = []
+}
+
 locals {
   cognito_domain_prefix = "hvac-${data.aws_caller_identity.current.account_id}"
+  cognito_local_callback_urls = [
+    "http://localhost:4200/callback",
+    "http://localhost:8080/callback"
+  ]
+  cognito_local_logout_urls = [
+    "http://localhost:4200/logout",
+    "http://localhost:8080/logout"
+  ]
+  cognito_callback_urls = distinct(concat(local.cognito_local_callback_urls, var.cognito_additional_callback_urls))
+  cognito_logout_urls   = distinct(concat(local.cognito_local_logout_urls, var.cognito_additional_logout_urls))
 }
 
 # Define a Cognito User Pool
@@ -45,8 +67,8 @@ resource "aws_cognito_user_pool_client" "user_pool_client" {
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows                  = ["code", "implicit"]
   allowed_oauth_scopes                 = ["email", "openid", "profile"]
-  callback_urls                        = ["http://localhost:8080/callback"]
-  logout_urls                          = ["http://localhost:8080/logout"]
+  callback_urls                        = local.cognito_callback_urls
+  logout_urls                          = local.cognito_logout_urls
   supported_identity_providers = ["COGNITO"]
 
   explicit_auth_flows = [

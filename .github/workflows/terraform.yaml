@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -46,15 +46,33 @@ jobs:
         working-directory: terraform
         run: terraform init -backend-config=environments/${{ github.event.inputs.environment }}/backend.hcl
 
+      - name: Prepare Cognito redirect URLs
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+            base_url="${{ vars.PROD_FRONTEND_BASE_URL }}"
+          else
+            base_url="${{ vars.DEV_FRONTEND_BASE_URL }}"
+          fi
+
+          base_url="${base_url%/}"
+          echo "FRONTEND_CALLBACK_URL=${base_url}/callback" >> "$GITHUB_ENV"
+          echo "FRONTEND_LOGOUT_URL=${base_url}/logout" >> "$GITHUB_ENV"
+
       - name: Terraform command
         working-directory: terraform
         run: |
           if [ "${{ github.event.inputs.command }}" == "plan" ]; then
-            terraform plan 
+            terraform plan \
+              -var "cognito_additional_callback_urls=[\"${FRONTEND_CALLBACK_URL}\"]" \
+              -var "cognito_additional_logout_urls=[\"${FRONTEND_LOGOUT_URL}\"]"
           fi
           if [ "${{ github.event.inputs.command }}" == "apply" ]; then
-            terraform apply -auto-approve
+            terraform apply -auto-approve \
+              -var "cognito_additional_callback_urls=[\"${FRONTEND_CALLBACK_URL}\"]" \
+              -var "cognito_additional_logout_urls=[\"${FRONTEND_LOGOUT_URL}\"]"
           fi
           if [ "${{ github.event.inputs.command }}" == "destroy" ]; then
-            terraform destroy -auto-approve
+            terraform destroy -auto-approve \
+              -var "cognito_additional_callback_urls=[\"${FRONTEND_CALLBACK_URL}\"]" \
+              -var "cognito_additional_logout_urls=[\"${FRONTEND_LOGOUT_URL}\"]"
           fi

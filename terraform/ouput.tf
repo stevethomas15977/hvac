@@ -23,3 +23,13 @@ output "user_pool_domain_url" {
   description = "Cognito managed Hosted UI domain URL"
   value       = "https://${aws_cognito_user_pool_domain.user_pool_domain.domain}.auth.${data.aws_region.current.name}.amazoncognito.com"
 }
+
+output "user_pool_callback_urls" {
+  description = "Effective callback URLs configured on the Cognito app client"
+  value       = aws_cognito_user_pool_client.user_pool_client.callback_urls
+}
+
+output "user_pool_logout_urls" {
+  description = "Effective logout URLs configured on the Cognito app client"
+  value       = aws_cognito_user_pool_client.user_pool_client.logout_urls
+}
