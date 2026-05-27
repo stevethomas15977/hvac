@@ -43,7 +43,7 @@ jobs:
 
       - name: Build
         working-directory: frontend/hvac
-        run: ng build --configuration "${{ github.event.inputs.environment }}"
+        run: npm run build -- --configuration "${{ github.event.inputs.environment }}"
    
       - name: Copy files to S3
         working-directory: frontend/hvac
