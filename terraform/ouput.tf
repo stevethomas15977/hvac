@@ -21,7 +21,7 @@ output "user_pool_domain_prefix" {
 
 output "user_pool_domain_url" {
   description = "Cognito managed Hosted UI domain URL"
-  value       = "https://${aws_cognito_user_pool_domain.user_pool_domain.domain}.auth.${data.aws_region.current.name}.amazoncognito.com"
+  value       = "https://${aws_cognito_user_pool_domain.user_pool_domain.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
 }
 
 output "user_pool_callback_urls" {

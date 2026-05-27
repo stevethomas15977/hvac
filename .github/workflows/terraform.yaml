@@ -48,6 +48,9 @@ jobs:
 
       - name: Prepare Cognito redirect URLs
         run: |
+          callback_urls='[]'
+          logout_urls='[]'
+
           if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
             base_url="${{ vars.PROD_FRONTEND_BASE_URL }}"
           else
@@ -55,24 +58,34 @@ jobs:
           fi
 
           base_url="${base_url%/}"
-          echo "FRONTEND_CALLBACK_URL=${base_url}/callback" >> "$GITHUB_ENV"
-          echo "FRONTEND_LOGOUT_URL=${base_url}/logout" >> "$GITHUB_ENV"
+
+          if [[ -z "$base_url" ]]; then
+            echo "No frontend base URL configured. Using localhost-only Cognito redirects from Terraform defaults."
+          elif [[ "$base_url" =~ ^https:// ]]; then
+            callback_urls="[\"${base_url}/callback\"]"
+            logout_urls="[\"${base_url}/logout\"]"
+          else
+            echo "Skipping deployed redirect URL because Cognito Hosted UI requires HTTPS for non-localhost URLs: $base_url"
+          fi
+
+          echo "COGNITO_ADDITIONAL_CALLBACK_URLS=${callback_urls}" >> "$GITHUB_ENV"
+          echo "COGNITO_ADDITIONAL_LOGOUT_URLS=${logout_urls}" >> "$GITHUB_ENV"
 
       - name: Terraform command
         working-directory: terraform
         run: |
           if [ "${{ github.event.inputs.command }}" == "plan" ]; then
             terraform plan \
-              -var "cognito_additional_callback_urls=[\"${FRONTEND_CALLBACK_URL}\"]" \
-              -var "cognito_additional_logout_urls=[\"${FRONTEND_LOGOUT_URL}\"]"
+              -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
+              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}"
           fi
           if [ "${{ github.event.inputs.command }}" == "apply" ]; then
             terraform apply -auto-approve \
-              -var "cognito_additional_callback_urls=[\"${FRONTEND_CALLBACK_URL}\"]" \
-              -var "cognito_additional_logout_urls=[\"${FRONTEND_LOGOUT_URL}\"]"
+              -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
+              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}"
           fi
           if [ "${{ github.event.inputs.command }}" == "destroy" ]; then
             terraform destroy -auto-approve \
-              -var "cognito_additional_callback_urls=[\"${FRONTEND_CALLBACK_URL}\"]" \
-              -var "cognito_additional_logout_urls=[\"${FRONTEND_LOGOUT_URL}\"]"
+              -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
+              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}"
           fi
