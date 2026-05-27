@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { getCurrentUser, signInWithRedirect, signOut } from 'aws-amplify/auth';
+import { fetchAuthSession, getCurrentUser, signInWithRedirect, signOut } from 'aws-amplify/auth';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -8,6 +8,14 @@ export class AuthService {
   readonly errorMessage = signal<string | null>(null);
 
   readonly isAuthenticated = () => this.currentUsername() !== null;
+
+  async ensureInitialized(): Promise<void> {
+    if (this.currentUsername() !== null) {
+      return;
+    }
+
+    await this.initialize();
+  }
 
   async initialize(): Promise<void> {
     this.errorMessage.set(null);
@@ -41,6 +49,26 @@ export class AuthService {
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  async getUserGroups(): Promise<string[]> {
+    const session = await fetchAuthSession();
+    const groups = session.tokens?.idToken?.payload['cognito:groups'];
+
+    if (Array.isArray(groups)) {
+      return groups.filter((value): value is string => typeof value === 'string');
+    }
+
+    return [];
+  }
+
+  async hasAnyGroup(requiredGroups: string[]): Promise<boolean> {
+    if (requiredGroups.length === 0) {
+      return true;
+    }
+
+    const groups = await this.getUserGroups();
+    return requiredGroups.some((group) => groups.includes(group));
   }
 
   private async refreshCurrentUser(): Promise<void> {
