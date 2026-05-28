@@ -114,7 +114,7 @@ jobs:
 
           invalidation_id=$(aws cloudfront create-invalidation \
             --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-            --paths "/" "/index.html" "/app-config.json" "/docs/sales-rep-user-guide.md" \
+            --paths "/*" \
             --query 'Invalidation.Id' \
             --output text)
 
