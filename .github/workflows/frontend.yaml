@@ -77,29 +77,73 @@ jobs:
       - name: Build
         working-directory: frontend/hvac
         run: npm run build -- --configuration "${{ github.event.inputs.environment }}"
+
+      - name: Resolve deployment context
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+            s3_bucket="${{ vars.PROD_S3_BUCKET_FRONTEND }}"
+            distribution_id="${{ vars.PROD_CLOUDFRONT_DISTRIBUTION_ID }}"
+            deployed_url="${{ vars.PROD_FRONTEND_BASE_URL }}"
+          else
+            s3_bucket="${{ vars.DEV_S3_BUCKET_FRONTEND }}"
+            distribution_id="${{ vars.DEV_CLOUDFRONT_DISTRIBUTION_ID }}"
+            deployed_url="${{ vars.DEV_FRONTEND_BASE_URL }}"
+          fi
+
+          deployed_url="${deployed_url%/}"
+
+          echo "S3_BUCKET_FRONTEND=${s3_bucket}" >> "$GITHUB_ENV"
+          echo "CLOUDFRONT_DISTRIBUTION_ID=${distribution_id}" >> "$GITHUB_ENV"
+          echo "DEPLOYED_URL=${deployed_url}" >> "$GITHUB_ENV"
    
       - name: Copy files to S3
         working-directory: frontend/hvac
-        run: |
-          if [ "${{ github.event.inputs.environment }}" == "production" ]; then
-            aws s3 sync dist/hvac/browser s3://${{ vars.PROD_S3_BUCKET_FRONTEND }} --delete
-          else
-            aws s3 sync dist/hvac/browser s3://${{ vars.DEV_S3_BUCKET_FRONTEND }} --delete
-          fi
+        run: aws s3 sync dist/hvac/browser s3://${S3_BUCKET_FRONTEND} --delete
 
       - name: Invalidate CloudFront cache
         run: |
-          if [ "${{ github.event.inputs.environment }}" == "production" ]; then
-            distribution_id="${{ vars.PROD_CLOUDFRONT_DISTRIBUTION_ID }}"
-          else
-            distribution_id="${{ vars.DEV_CLOUDFRONT_DISTRIBUTION_ID }}"
-          fi
-
-          if [ -z "$distribution_id" ]; then
+          if [ -z "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
             echo "CloudFront distribution ID is not configured for this environment. Skipping invalidation."
+            echo "CLOUDFRONT_INVALIDATION_ID=not-configured" >> "$GITHUB_ENV"
             exit 0
           fi
 
-          aws cloudfront create-invalidation \
-            --distribution-id "$distribution_id" \
-            --paths "/*"
+          invalidation_id=$(aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "/" "/index.html" \
+            --query 'Invalidation.Id' \
+            --output text)
+
+          echo "CLOUDFRONT_INVALIDATION_ID=${invalidation_id}" >> "$GITHUB_ENV"
+
+      - name: Post-deploy smoke checks
+        run: |
+          if [ -z "$DEPLOYED_URL" ]; then
+            echo "DEPLOYED_URL is not configured. Skipping smoke checks."
+            echo "SMOKE_CHECK_STATUS=skipped" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          root_status=$(curl -sS -o /tmp/root.html -w "%{http_code}" "$DEPLOYED_URL/")
+          if [ "$root_status" != "200" ]; then
+            echo "Root URL health check failed with status: $root_status"
+            exit 1
+          fi
+
+          if ! grep -q "<app-root" /tmp/root.html; then
+            echo "Smoke check failed: app shell marker '<app-root' not found at root URL."
+            exit 1
+          fi
+
+          echo "SMOKE_CHECK_STATUS=passed" >> "$GITHUB_ENV"
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "## Frontend Deploy Summary"
+            echo "- Environment: ${{ github.event.inputs.environment }}"
+            echo "- Deployed URL: ${DEPLOYED_URL:-not-configured}"
+            echo "- CloudFront Distribution ID: ${CLOUDFRONT_DISTRIBUTION_ID:-not-configured}"
+            echo "- CloudFront Invalidation ID: ${CLOUDFRONT_INVALIDATION_ID:-not-created}"
+            echo "- Smoke Check: ${SMOKE_CHECK_STATUS:-not-run}"
+          } >> "$GITHUB_STEP_SUMMARY"
