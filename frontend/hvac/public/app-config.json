@@ -1,4 +1,8 @@
 {
+  "app": {
+    "proposalApiMode": "mock",
+    "authMode": "local"
+  },
   "cognito": {
     "userPoolId": "",
     "userPoolClientId": "",

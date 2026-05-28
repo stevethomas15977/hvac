@@ -48,10 +48,10 @@ export const routes: Routes = [
 	{
 		path: '',
 		pathMatch: 'full',
-		redirectTo: 'logout'
+		redirectTo: 'app/dashboard'
 	},
 	{
 		path: '**',
-		redirectTo: 'logout'
+		redirectTo: 'app/dashboard'
 	}
 ];

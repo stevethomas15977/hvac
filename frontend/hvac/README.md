@@ -36,6 +36,69 @@ ng build
 
 This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
 
+## Proposal Intake API (Mock/HTTP)
+
+The Proposals page uses a mode-switchable service layer so the UI can run in mock mode now and switch to real HTTP endpoints later without component rewrites.
+
+### Mode switch
+
+Configure mode in `public/app-config.json`:
+
+```json
+{
+	"app": {
+		"proposalApiMode": "mock"
+	}
+}
+```
+
+Supported values:
+
+- `mock`: uses in-memory data (`ProposalsIntakeMockApiService`)
+- `http`: uses backend endpoints (`ProposalsIntakeHttpApiService`)
+
+### HTTP endpoints expected by frontend
+
+Base URL:
+
+- `/api/proposals/intake`
+
+Endpoints:
+
+- `GET /opportunities`
+- `POST /opportunities/{opportunityId}/load-mock-package`
+- `POST /opportunities/{opportunityId}/reset`
+- `POST /opportunities/{opportunityId}/run-qualification`
+
+All responses should return a `BidOpportunity` object (or an array for list endpoint).
+
+### BidOpportunity contract (summary)
+
+```ts
+interface BidOpportunity {
+	id: string;
+	projectName: string;
+	projectType: string;
+	location: string;
+	source: 'Open Bid' | 'Private Invite';
+	dueDate: string; // ISO datetime
+	manufacturer: string;
+	estimatedValueUsd: number;
+	intakeStatus: 'not_started' | 'uploading' | 'processing' | 'ready' | 'error';
+	score: number;
+	approvedManufacturers: string[];
+	docs: BidDocument[];
+	missingItems: string[];
+	events: IntakeEvent[];
+}
+```
+
+Reference source files:
+
+- `src/app/pages/proposals-page.models.ts`
+- `src/app/pages/proposal-intake-api.ts`
+- `src/app/pages/proposals-intake-http-api.service.ts`
+
 ## Running unit tests
 
 To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:

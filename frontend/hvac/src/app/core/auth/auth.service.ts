@@ -1,8 +1,12 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { fetchAuthSession, getCurrentUser, signInWithRedirect, signOut } from 'aws-amplify/auth';
+import { RuntimeConfigService } from '../config/runtime-config.service';
+import { buildCognitoConfig, isCognitoConfigured } from './cognito.config';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  private readonly runtimeConfig = inject(RuntimeConfigService);
+
   readonly currentUsername = signal<string | null>(null);
   readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
@@ -19,10 +23,26 @@ export class AuthService {
 
   async initialize(): Promise<void> {
     this.errorMessage.set(null);
+
+    if (this.isLocalAuthMode()) {
+      this.currentUsername.set('local.estimator');
+      return;
+    }
+
     await this.refreshCurrentUser();
   }
 
   async startHostedSignIn(): Promise<void> {
+    if (this.isLocalAuthMode()) {
+      this.currentUsername.set('local.estimator');
+      return;
+    }
+
+    if (!this.isHostedSignInConfigured()) {
+      this.errorMessage.set('Cognito is not configured for this environment.');
+      return;
+    }
+
     this.errorMessage.set(null);
     this.isLoading.set(true);
 
@@ -37,6 +57,11 @@ export class AuthService {
   }
 
   async signOutUser(): Promise<void> {
+    if (this.isLocalAuthMode()) {
+      this.currentUsername.set(null);
+      return;
+    }
+
     this.errorMessage.set(null);
     this.isLoading.set(true);
 
@@ -86,5 +111,14 @@ export class AuthService {
     }
 
     return 'Authentication failed.';
+  }
+
+  private isLocalAuthMode(): boolean {
+    return this.runtimeConfig.config.app.authMode !== 'cognito';
+  }
+
+  private isHostedSignInConfigured(): boolean {
+    const cognitoConfig = buildCognitoConfig(this.runtimeConfig.config.cognito);
+    return isCognitoConfigured(cognitoConfig);
   }
 }

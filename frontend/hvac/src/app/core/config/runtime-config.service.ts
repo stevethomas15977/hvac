@@ -1,9 +1,11 @@
 import { Injectable } from '@angular/core';
 import { Amplify } from 'aws-amplify';
 import { buildCognitoConfig, isCognitoConfigured, type RuntimeCognitoSettings } from '../auth/cognito.config';
+import { ProposalAppConfig } from '../../pages/proposals-page.models';
 
-interface RuntimeAppConfig {
+export interface RuntimeAppConfig {
   cognito: RuntimeCognitoSettings;
+  app: ProposalAppConfig;
 }
 
 const defaultRuntimeConfig: RuntimeAppConfig = {
@@ -12,6 +14,10 @@ const defaultRuntimeConfig: RuntimeAppConfig = {
     userPoolClientId: '',
     domain: '',
     localOrigins: ['http://localhost:4200', 'http://localhost:8080']
+  },
+  app: {
+    proposalApiMode: 'mock',
+    authMode: 'local'
   }
 };
 
@@ -79,6 +85,7 @@ export class RuntimeConfigService {
 
     const candidate = rawConfig as {
       cognito?: RuntimeCognitoSettings;
+      app?: ProposalAppConfig;
     };
 
     const localOrigins = Array.isArray(candidate.cognito?.localOrigins)
@@ -92,6 +99,10 @@ export class RuntimeConfigService {
         domain: candidate.cognito?.domain ?? '',
         frontendBaseUrl: candidate.cognito?.frontendBaseUrl ?? '',
         localOrigins
+      },
+      app: {
+        proposalApiMode: candidate.app?.proposalApiMode === 'http' ? 'http' : 'mock',
+        authMode: candidate.app?.authMode === 'cognito' ? 'cognito' : 'local'
       }
     };
   }
