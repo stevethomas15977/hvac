@@ -95,12 +95,38 @@
    - rerun invalidation.
 3. Keep localhost Cognito redirects for emergency local demo fallback.
 
+### Step 9 Implementation Notes (Completed)
+1. Previous DNS target is recorded in deployment handoff notes before each cutover.
+2. Rollback runbook:
+   - Repoint Route53 alias for the environment hostname back to the previous known-good CloudFront distribution target.
+   - Redeploy the last known-good frontend artifact by rerunning the previous successful GitHub Actions frontend workflow run.
+   - Run CloudFront invalidation for `/` and `/index.html` (or rerun the frontend workflow, which performs invalidation automatically).
+3. Localhost Cognito redirects remain configured as fallback (`http://localhost:4200` and `http://localhost:8080`).
+
 ## Step 10: Sign-Off Checklist
 1. Deployed login flow uses HTTPS only.
 2. CloudFront is active front door.
 3. Cognito callback/logout use HTTPS Dev domain.
 4. SPA refresh/deep links work.
 5. Dev workflow deploy is repeatable and stable.
+
+### Step 10 Sign-Off (Completed)
+- Sign-off date: 2026-05-28
+- Environment validated: Development
+- Status: Complete
+
+Checklist results:
+- [x] Deployed login flow uses HTTPS only.
+- [x] CloudFront is active front door.
+- [x] Cognito callback/logout use HTTPS Dev domain.
+- [x] SPA refresh/deep links work.
+- [x] Dev workflow deploy is repeatable and stable.
+
+Validation evidence captured during sprint:
+1. Runtime Cognito configuration is injected at startup using Angular `provideAppInitializer`.
+2. Frontend workflow generates `public/app-config.json` from environment-scoped GitHub repository variables.
+3. Frontend workflow now includes CloudFront invalidation and post-deploy smoke checks.
+4. End-to-end authentication and deep-link behavior was manually validated in Dev.
 
 ---
 
