@@ -8,7 +8,15 @@ export interface CognitoConfig {
   responseType: 'code';
 }
 
-const localOrigins = ['http://localhost:4200', 'http://localhost:8080'];
+export interface RuntimeCognitoSettings {
+  userPoolId?: string;
+  userPoolClientId?: string;
+  domain?: string;
+  frontendBaseUrl?: string;
+  localOrigins?: string[];
+}
+
+const defaultLocalOrigins = ['http://localhost:4200', 'http://localhost:8080'];
 
 function getCurrentOrigin(): string | null {
   if (typeof window === 'undefined') {
@@ -18,23 +26,53 @@ function getCurrentOrigin(): string | null {
   return window.location.origin;
 }
 
-function buildRedirectUrls(path: '/callback' | '/logout'): string[] {
+function sanitizeOrigin(origin: string): string | null {
+  if (!origin) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOrigins(settings: RuntimeCognitoSettings): string[] {
+  const configuredOrigins = settings.localOrigins ?? defaultLocalOrigins;
   const currentOrigin = getCurrentOrigin();
-  const origins = currentOrigin ? [currentOrigin, ...localOrigins] : localOrigins;
-  const uniqueOrigins = Array.from(new Set(origins));
+  const candidates = [currentOrigin, settings.frontendBaseUrl, ...configuredOrigins]
+    .filter((value): value is string => Boolean(value));
+
+  const validOrigins = candidates
+    .map((origin) => sanitizeOrigin(origin))
+    .filter((value): value is string => Boolean(value));
+
+  return Array.from(new Set(validOrigins));
+}
+
+function buildRedirectUrls(settings: RuntimeCognitoSettings, path: '/callback' | '/logout'): string[] {
+  const uniqueOrigins = normalizeOrigins(settings);
 
   return uniqueOrigins.map((origin) => `${origin}${path}`);
 }
 
-export const cognitoConfig: CognitoConfig = {
-  userPoolId: 'us-east-1_BCiF1vC0f',
-  userPoolClientId: '53fj59peq7e6967el5ruulqkob',
-  domain: 'hvac-499181527793.auth.us-east-1.amazoncognito.com',
-  redirectSignIn: buildRedirectUrls('/callback'),
-  redirectSignOut: buildRedirectUrls('/logout'),
-  scopes: ['openid', 'email', 'profile'],
-  responseType: 'code'
-};
+export function buildCognitoConfig(settings: RuntimeCognitoSettings): CognitoConfig {
+  return {
+    userPoolId: settings.userPoolId?.trim() ?? '',
+    userPoolClientId: settings.userPoolClientId?.trim() ?? '',
+    domain: settings.domain?.trim() ?? '',
+    redirectSignIn: buildRedirectUrls(settings, '/callback'),
+    redirectSignOut: buildRedirectUrls(settings, '/logout'),
+    scopes: ['openid', 'email', 'profile'],
+    responseType: 'code'
+  };
+}
 
 export function isCognitoConfigured(config: CognitoConfig): boolean {
   return Boolean(

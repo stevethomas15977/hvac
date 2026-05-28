@@ -1,0 +1,12 @@
+{
+  "cognito": {
+    "userPoolId": "",
+    "userPoolClientId": "",
+    "domain": "",
+    "frontendBaseUrl": "",
+    "localOrigins": [
+      "http://localhost:4200",
+      "http://localhost:8080"
+    ]
+  }
+}

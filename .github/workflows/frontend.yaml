@@ -42,6 +42,38 @@ jobs:
         working-directory: frontend/hvac
         run: npm ci
 
+      - name: Build runtime app config
+        working-directory: frontend/hvac
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+            frontend_base_url="${{ vars.PROD_FRONTEND_BASE_URL }}"
+            cognito_user_pool_id="${{ vars.PROD_COGNITO_USER_POOL_ID }}"
+            cognito_user_pool_client_id="${{ vars.PROD_COGNITO_USER_POOL_CLIENT_ID }}"
+            cognito_domain="${{ vars.PROD_COGNITO_DOMAIN }}"
+          else
+            frontend_base_url="${{ vars.DEV_FRONTEND_BASE_URL }}"
+            cognito_user_pool_id="${{ vars.DEV_COGNITO_USER_POOL_ID }}"
+            cognito_user_pool_client_id="${{ vars.DEV_COGNITO_USER_POOL_CLIENT_ID }}"
+            cognito_domain="${{ vars.DEV_COGNITO_DOMAIN }}"
+          fi
+
+          frontend_base_url="${frontend_base_url%/}"
+
+          cat > public/app-config.json <<EOF
+          {
+            "cognito": {
+              "userPoolId": "${cognito_user_pool_id}",
+              "userPoolClientId": "${cognito_user_pool_client_id}",
+              "domain": "${cognito_domain}",
+              "frontendBaseUrl": "${frontend_base_url}",
+              "localOrigins": [
+                "http://localhost:4200",
+                "http://localhost:8080"
+              ]
+            }
+          }
+          EOF
+
       - name: Build
         working-directory: frontend/hvac
         run: npm run build -- --configuration "${{ github.event.inputs.environment }}"

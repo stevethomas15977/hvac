@@ -52,6 +52,21 @@
    - `/index.html`
    - optionally all paths initially.
 
+## Step 6.5: Runtime Frontend Config Injection
+1. Remove hard-coded Cognito values from Angular source.
+2. Load runtime config from `public/app-config.json` using Angular `provideAppInitializer`.
+3. Generate `public/app-config.json` in GitHub Actions from repository variables during deploy.
+4. Define environment-scoped repository variables:
+   - `DEV_COGNITO_USER_POOL_ID`
+   - `DEV_COGNITO_USER_POOL_CLIENT_ID`
+   - `DEV_COGNITO_DOMAIN`
+   - `DEV_FRONTEND_BASE_URL`
+   - `PROD_COGNITO_USER_POOL_ID`
+   - `PROD_COGNITO_USER_POOL_CLIENT_ID`
+   - `PROD_COGNITO_DOMAIN`
+   - `PROD_FRONTEND_BASE_URL`
+5. Keep localhost origins in runtime config for local sign-in callback compatibility.
+
 ## Step 7: End-to-End Validation
 1. Open Dev HTTPS URL and confirm app loads.
 2. Test deep links:
