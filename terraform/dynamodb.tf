@@ -15,50 +15,50 @@ locals {
 resource "aws_dynamodb_table" "proposal_submissions" {
   name         = "hvac-proposal-submissions"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "pk"
-  range_key    = "sk"
+  hash_key     = "tenant_key"
+  range_key    = "submission_key"
 
   attribute {
-    name = "pk"
+    name = "tenant_key"
     type = "S"
   }
 
   attribute {
-    name = "sk"
+    name = "submission_key"
     type = "S"
   }
 
   attribute {
-    name = "gsi1pk"
+    name = "review_queue_key"
     type = "S"
   }
 
   attribute {
-    name = "gsi1sk"
+    name = "review_queue_sort_key"
     type = "S"
   }
 
   attribute {
-    name = "gsi2pk"
+    name = "submitted_by_key"
     type = "S"
   }
 
   attribute {
-    name = "gsi2sk"
+    name = "submitted_by_sort_key"
     type = "S"
   }
 
   global_secondary_index {
     name            = "review_queue"
-    hash_key        = "gsi1pk"
-    range_key       = "gsi1sk"
+    hash_key        = "review_queue_key"
+    range_key       = "review_queue_sort_key"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "submitted_by"
-    hash_key        = "gsi2pk"
-    range_key       = "gsi2sk"
+    hash_key        = "submitted_by_key"
+    range_key       = "submitted_by_sort_key"
     projection_type = "ALL"
   }
 

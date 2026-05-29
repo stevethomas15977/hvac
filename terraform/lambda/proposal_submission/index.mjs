@@ -49,12 +49,12 @@ export const handler = async (event) => {
   const status = recommendation === 'needs_review' ? 'needs_review' : 'submitted';
 
   const item = {
-    pk: `TENANT#${tenantId}`,
-    sk: `SUBMISSION#${submittedAtIso}#${submissionId}`,
-    gsi1pk: `QUEUE#${status}`,
-    gsi1sk: `${submittedAtIso}#TENANT#${tenantId}#SUBMISSION#${submissionId}`,
-    gsi2pk: `USER#${submittedBy}`,
-    gsi2sk: `${submittedAtIso}#TENANT#${tenantId}#SUBMISSION#${submissionId}`,
+    tenant_key: `TENANT#${tenantId}`,
+    submission_key: `SUBMISSION#${submittedAtIso}#${submissionId}`,
+    review_queue_key: `QUEUE#${status}`,
+    review_queue_sort_key: `${submittedAtIso}#TENANT#${tenantId}#SUBMISSION#${submissionId}`,
+    submitted_by_key: `USER#${submittedBy}`,
+    submitted_by_sort_key: `${submittedAtIso}#TENANT#${tenantId}#SUBMISSION#${submissionId}`,
     entityType: 'proposal_submission',
     tenantId,
     submissionId,
@@ -75,7 +75,7 @@ export const handler = async (event) => {
   await client.send(new PutCommand({
     TableName: tableName,
     Item: item,
-    ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+    ConditionExpression: 'attribute_not_exists(tenant_key) AND attribute_not_exists(submission_key)'
   }));
 
   return response(201, {
