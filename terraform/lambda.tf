@@ -22,6 +22,7 @@ resource "aws_lambda_function" "proposal_submission" {
   environment {
     variables = {
       PROPOSAL_SUBMISSIONS_TABLE          = aws_dynamodb_table.proposal_submissions.name
+      PROPOSAL_DEFAULT_TENANT_ID          = "development"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
     }
   }

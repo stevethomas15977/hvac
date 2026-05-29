@@ -4,6 +4,7 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const tableName = process.env.PROPOSAL_SUBMISSIONS_TABLE;
+const defaultTenantId = process.env.PROPOSAL_DEFAULT_TENANT_ID || 'development';
 
 function response(statusCode, body) {
   return {
@@ -19,10 +20,50 @@ function normalizeRecommendation(payload) {
   return payload?.state?.finalDecision?.recommendation ?? payload?.decisionPreview?.status ?? 'needs_review';
 }
 
+function getJwtClaims(event) {
+  return event.requestContext?.authorizer?.jwt?.claims ?? null;
+}
+
 function resolveTenantId(event) {
-  const claimTenant = event.requestContext?.authorizer?.jwt?.claims?.['custom:tenant_id'];
-  const headerTenant = event.headers?.['x-tenant-id'] ?? event.headers?.['X-Tenant-Id'];
-  return claimTenant || headerTenant || 'development';
+  const claims = getJwtClaims(event);
+  const claimTenantId = claims?.['custom:tenant_id'];
+  const claimTenantCode = claims?.['custom:tenant_code'];
+
+  if (typeof claimTenantId === 'string' && claimTenantId.trim()) {
+    return claimTenantId.trim();
+  }
+
+  if (typeof claimTenantCode === 'string' && claimTenantCode.trim()) {
+    return claimTenantCode.trim();
+  }
+
+  return defaultTenantId;
+}
+
+function resolveSubmittedBy(event, payload) {
+  const claims = getJwtClaims(event);
+
+  const claimUsername = claims?.['cognito:username'];
+  if (typeof claimUsername === 'string' && claimUsername.trim()) {
+    return claimUsername.trim();
+  }
+
+  const claimPreferredUsername = claims?.preferred_username;
+  if (typeof claimPreferredUsername === 'string' && claimPreferredUsername.trim()) {
+    return claimPreferredUsername.trim();
+  }
+
+  const claimEmail = claims?.email;
+  if (typeof claimEmail === 'string' && claimEmail.trim()) {
+    return claimEmail.trim();
+  }
+
+  const claimSubject = claims?.sub;
+  if (typeof claimSubject === 'string' && claimSubject.trim()) {
+    return claimSubject.trim();
+  }
+
+  return payload.submittedBy || 'unknown';
 }
 
 export const handler = async (event) => {
@@ -45,7 +86,7 @@ export const handler = async (event) => {
   const submissionId = crypto.randomUUID();
   const tenantId = resolveTenantId(event);
   const recommendation = normalizeRecommendation(payload);
-  const submittedBy = payload.submittedBy || 'unknown';
+  const submittedBy = resolveSubmittedBy(event, payload);
   const status = recommendation === 'needs_review' ? 'needs_review' : 'submitted';
 
   const item = {

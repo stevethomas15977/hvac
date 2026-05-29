@@ -17,6 +17,18 @@ resource "aws_apigatewayv2_stage" "proposal_submission" {
   auto_deploy = true
 }
 
+resource "aws_apigatewayv2_authorizer" "proposal_submission_cognito" {
+  api_id           = aws_apigatewayv2_api.proposal_submission.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "proposal-submission-cognito-jwt"
+
+  jwt_configuration {
+    audience = [aws_cognito_user_pool_client.user_pool_client.id]
+    issuer   = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${aws_cognito_user_pool.user_pool.id}"
+  }
+}
+
 resource "aws_apigatewayv2_integration" "proposal_submission" {
   api_id                 = aws_apigatewayv2_api.proposal_submission.id
   integration_type       = "AWS_PROXY"
@@ -26,9 +38,11 @@ resource "aws_apigatewayv2_integration" "proposal_submission" {
 }
 
 resource "aws_apigatewayv2_route" "proposal_submission" {
-  api_id    = aws_apigatewayv2_api.proposal_submission.id
-  route_key = "POST /api/proposals/wizard/submissions"
-  target    = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/proposals/wizard/submissions"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
 }
 
 resource "aws_lambda_permission" "proposal_submission_from_apigateway" {

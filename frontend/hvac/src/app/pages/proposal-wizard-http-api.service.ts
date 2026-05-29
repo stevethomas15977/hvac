@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { from, Observable } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { RuntimeConfigService } from '../core/config/runtime-config.service';
 import {
   ProposalWizardApi,
@@ -21,6 +23,19 @@ export class ProposalWizardHttpApiService implements ProposalWizardApi {
   }
 
   submitDecisionPacket(payload: ProposalWizardSubmissionPayload): Observable<ProposalWizardSubmissionReceipt> {
-    return this.http.post<ProposalWizardSubmissionReceipt>(`${this.baseUrl}/submissions`, payload);
+    return from(fetchAuthSession()).pipe(
+      switchMap((session) => {
+        const idToken = session.tokens?.idToken?.toString();
+        const headers = idToken
+          ? new HttpHeaders({
+              Authorization: `Bearer ${idToken}`
+            })
+          : undefined;
+
+        return this.http.post<ProposalWizardSubmissionReceipt>(`${this.baseUrl}/submissions`, payload, {
+          headers
+        });
+      })
+    );
   }
 }
