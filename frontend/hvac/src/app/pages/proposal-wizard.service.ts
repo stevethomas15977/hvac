@@ -1,7 +1,12 @@
 import { Inject, Injectable, Injector, computed, effect, inject, signal } from '@angular/core';
 import { finalize } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
-import { PROPOSAL_WIZARD_API, ProposalWizardApi, ProposalWizardSubmissionReceipt } from './proposal-wizard-api';
+import {
+  PROPOSAL_WIZARD_API,
+  ProposalWizardApi,
+  ProposalWizardRecentSubmission,
+  ProposalWizardSubmissionReceipt
+} from './proposal-wizard-api';
 
 export type ProposalSourceType = 'email' | 'procore' | 'constructconnect' | 'shared_drive' | 'dropbox' | 'direct_link' | 'other';
 export type BidVisibility = 'open_bid' | 'closed_bid' | 'invited' | 'basis_of_design' | 'unknown';
@@ -134,6 +139,7 @@ export class ProposalWizardService {
   readonly submitErrorMessage = signal<string | null>(null);
   readonly lastSubmissionReceipt = signal<ProposalWizardSubmissionReceipt | null>(null);
   readonly lastSubmittedSnapshot = signal<string | null>(null);
+  readonly recentSubmissions = signal<ProposalWizardRecentSubmission[]>([]);
 
   readonly selectedScopeLabels = computed(() => {
     const scope = this.state().scope;
@@ -213,6 +219,8 @@ export class ProposalWizardService {
 
       window.localStorage.setItem(this.storageKey(username), JSON.stringify(payload));
     }, { injector: this.injector });
+
+    this.refreshRecentSubmissions();
   }
 
   setCurrentStep(stepIndex: number): void {
@@ -384,11 +392,23 @@ export class ProposalWizardService {
               submittedAtIso: receipt.submittedAtIso
             }
           }));
+          this.refreshRecentSubmissions();
         },
         error: (error: unknown) => {
           this.submitErrorMessage.set(this.toErrorMessage(error));
         }
       });
+  }
+
+  refreshRecentSubmissions(limit = 10): void {
+    this.api.getRecentSubmissions(limit).subscribe({
+      next: (response) => {
+        this.recentSubmissions.set(response.submissions);
+      },
+      error: () => {
+        this.recentSubmissions.set([]);
+      }
+    });
   }
 
   retrySubmission(): void {

@@ -6,6 +6,7 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { RuntimeConfigService } from '../core/config/runtime-config.service';
 import {
   ProposalWizardApi,
+  ProposalWizardRecentSubmissionsResponse,
   ProposalWizardSubmissionPayload,
   ProposalWizardSubmissionReceipt
 } from './proposal-wizard-api';
@@ -23,6 +24,23 @@ export class ProposalWizardHttpApiService implements ProposalWizardApi {
   }
 
   submitDecisionPacket(payload: ProposalWizardSubmissionPayload): Observable<ProposalWizardSubmissionReceipt> {
+    return this.withAuthHeaders((headers) =>
+      this.http.post<ProposalWizardSubmissionReceipt>(`${this.baseUrl}/submissions`, payload, {
+        headers
+      })
+    );
+  }
+
+  getRecentSubmissions(limit = 10): Observable<ProposalWizardRecentSubmissionsResponse> {
+    const normalizedLimit = Math.max(1, Math.min(limit, 25));
+    return this.withAuthHeaders((headers) =>
+      this.http.get<ProposalWizardRecentSubmissionsResponse>(`${this.baseUrl}/submissions/recent?limit=${normalizedLimit}`, {
+        headers
+      })
+    );
+  }
+
+  private withAuthHeaders<T>(requestFactory: (headers: HttpHeaders | undefined) => Observable<T>): Observable<T> {
     return from(fetchAuthSession()).pipe(
       switchMap((session) => {
         const idToken = session.tokens?.idToken?.toString();
@@ -32,9 +50,7 @@ export class ProposalWizardHttpApiService implements ProposalWizardApi {
             })
           : undefined;
 
-        return this.http.post<ProposalWizardSubmissionReceipt>(`${this.baseUrl}/submissions`, payload, {
-          headers
-        });
+        return requestFactory(headers);
       })
     );
   }

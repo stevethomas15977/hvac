@@ -28,7 +28,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         </div>
       </header>
 
-      <section class="panel status-panel" aria-live="polite">
+      <section class="panel status-panel" aria-live="polite" *ngIf="hasStatusMessages()">
         <p class="status-line success" *ngIf="lastSubmissionReceipt()">Submission recorded in review queue.</p>
         <p class="status-line warning" *ngIf="shouldWarnBeforeUnload()">Unsaved changes are present.</p>
         <p class="status-line error" *ngIf="submitErrorMessage()">Submission failed. You can retry safely.</p>
@@ -300,9 +300,6 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             <p class="inline-message" *ngIf="state().finalDecision.submittedForReview">
               Submitted for review at {{ formatSubmittedAt(state().finalDecision.submittedAtIso) }}.
             </p>
-            <p class="inline-message" *ngIf="lastSubmissionReceipt()">
-              Submission ID: {{ lastSubmissionReceipt()?.submissionId }} ({{ lastSubmissionReceipt()?.reviewQueue }}).
-            </p>
             <p class="inline-message" *ngIf="lastSubmissionReceipt() && !hasChangesSinceLastSubmission()">
               No changes since last submission.
             </p>
@@ -312,6 +309,37 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             </button>
           </div>
         </article>
+      </section>
+
+      <section class="panel submission-details-panel" *ngIf="lastSubmissionReceipt()">
+        <div class="details-header">
+          <h2>Submission Details</h2>
+          <button type="button" class="ghost" (click)="refreshRecentSubmissions()">Refresh Recent</button>
+        </div>
+
+        <div class="details-grid">
+          <article class="detail-card">
+            <h3>Latest Receipt</h3>
+            <p><strong>Submission ID:</strong> {{ lastSubmissionReceipt()?.submissionId }}</p>
+            <p><strong>Queue:</strong> {{ lastSubmissionReceipt()?.reviewQueue }}</p>
+            <p><strong>Recommendation:</strong> {{ lastSubmissionReceipt()?.recommendation }}</p>
+            <p><strong>Submitted At:</strong> {{ formatSubmittedAt(lastSubmissionReceipt()?.submittedAtIso ?? null) }}</p>
+          </article>
+
+          <article class="detail-card">
+            <h3>Recent Submissions</h3>
+            <ul *ngIf="recentSubmissions().length > 0; else noRecentSubmissions">
+              <li *ngFor="let item of recentSubmissions()">
+                <div><strong>{{ item.submissionId }}</strong></div>
+                <div>{{ item.projectName || 'Unnamed project' }} ({{ item.projectNumber || 'N/A' }})</div>
+                <div>{{ item.recommendation }} • {{ item.status }} • {{ formatSubmittedAt(item.submittedAtIso) }}</div>
+              </li>
+            </ul>
+            <ng-template #noRecentSubmissions>
+              <p class="muted">No recent submissions returned.</p>
+            </ng-template>
+          </article>
+        </div>
       </section>
 
       <footer class="panel nav-panel">
@@ -661,6 +689,46 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       border-color: #d5e2ee;
     }
 
+    .submission-details-panel {
+      border-color: #cde1f3;
+      background: #f7fbff;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .details-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .details-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .detail-card {
+      border: 1px solid #d5e4f2;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 0.75rem;
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .detail-card ul {
+      margin: 0;
+      padding-left: 1rem;
+      display: grid;
+      gap: 0.4rem;
+      color: #4f6174;
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+
     .packet-panel {
       display: grid;
       gap: 0.6rem;
@@ -929,6 +997,10 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         grid-template-columns: 1fr;
       }
 
+      .details-grid {
+        grid-template-columns: 1fr;
+      }
+
       .form-grid {
         grid-template-columns: 1fr;
       }
@@ -962,7 +1034,11 @@ export class ProposalsNewWizardComponent {
   readonly hasChangesSinceLastSubmission = computed(() => this.service.hasChangesSinceLastSubmission());
   readonly submitErrorMessage = computed(() => this.service.submitErrorMessage());
   readonly lastSubmissionReceipt = computed(() => this.service.lastSubmissionReceipt());
+  readonly recentSubmissions = computed(() => this.service.recentSubmissions());
   readonly shouldWarnBeforeUnload = computed(() => this.service.shouldWarnBeforeUnload());
+  readonly hasStatusMessages = computed(() => {
+    return Boolean(this.lastSubmissionReceipt() || this.shouldWarnBeforeUnload() || this.submitErrorMessage());
+  });
   readonly currentStepIssues = computed(() => this.service.getStepIssues(this.currentStep()));
   readonly selectedScopeSummary = computed(() => {
     const labels = this.service.selectedScopeLabels();
@@ -1043,6 +1119,10 @@ export class ProposalsNewWizardComponent {
 
   retrySubmission(): void {
     this.service.retrySubmission();
+  }
+
+  refreshRecentSubmissions(): void {
+    this.service.refreshRecentSubmissions();
   }
 
   showFieldError(stepId: number, fieldFragment: string): boolean {

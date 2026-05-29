@@ -4,7 +4,7 @@ resource "aws_apigatewayv2_api" "proposal_submission" {
 
   cors_configuration {
     allow_headers  = ["authorization", "content-type", "x-tenant-id"]
-    allow_methods  = ["OPTIONS", "POST"]
+    allow_methods  = ["GET", "OPTIONS", "POST"]
     allow_origins  = local.proposal_api_allowed_origins
     expose_headers = ["content-type"]
     max_age        = 300
@@ -51,4 +51,12 @@ resource "aws_lambda_permission" "proposal_submission_from_apigateway" {
   function_name = aws_lambda_function.proposal_submission.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.proposal_submission.execution_arn}/*/*"
+}
+
+resource "aws_apigatewayv2_route" "proposal_submissions_recent_get" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "GET /api/proposals/wizard/submissions/recent"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
 }
