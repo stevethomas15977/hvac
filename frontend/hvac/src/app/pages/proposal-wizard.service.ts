@@ -55,6 +55,14 @@ export interface WizardStepValidation {
   issues: string[];
 }
 
+export type ProposalRecommendationStatus = 'go' | 'no_go' | 'needs_review';
+
+export interface ProposalDecisionPreview {
+  status: ProposalRecommendationStatus;
+  rationale: string;
+  blockers: string[];
+}
+
 const DRAFT_VERSION = 1;
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -117,6 +125,8 @@ export class ProposalWizardService {
     2: this.validateStep2(),
     3: this.validateStep3()
   }));
+
+  readonly decisionPreview = computed<ProposalDecisionPreview>(() => this.computeDecisionPreview());
 
   private hasInitialized = false;
 
@@ -401,6 +411,45 @@ export class ProposalWizardService {
       representedManufacturer,
       approvedManufacturers,
       canProceedToDecision: missingEvidence.length === 0 && !hasConflict
+    };
+  }
+
+  private computeDecisionPreview(): ProposalDecisionPreview {
+    const state = this.state();
+    const assessment = this.computeAssessment();
+    const blockers: string[] = [];
+
+    for (const step of [0, 1, 2, 3]) {
+      blockers.push(...this.getStepValidation(step).issues);
+    }
+
+    blockers.push(...assessment.missingEvidence);
+    if (assessment.hasConflict) {
+      blockers.push('Represented manufacturer conflicts with approved manufacturers.');
+    }
+
+    const hasMvpScope = state.scope.coolingTowers || state.scope.boilers || state.scope.pumps;
+    const onlyOutOfScopeSelection = !hasMvpScope && state.scope.heatExchangers;
+    if (onlyOutOfScopeSelection) {
+      return {
+        status: 'no_go',
+        rationale: 'Only out-of-scope equipment was selected for the MVP.',
+        blockers: ['Heat exchangers are tracked but not eligible for MVP automation decisions.']
+      };
+    }
+
+    if (blockers.length > 0) {
+      return {
+        status: 'needs_review',
+        rationale: 'Required evidence is incomplete or conflicting; final recommendation is blocked.',
+        blockers
+      };
+    }
+
+    return {
+      status: 'go',
+      rationale: 'Current draft has required MVP scope and no evidence conflicts.',
+      blockers: []
     };
   }
 }

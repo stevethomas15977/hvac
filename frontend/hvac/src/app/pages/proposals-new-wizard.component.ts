@@ -179,6 +179,19 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         </ng-template>
       </section>
 
+      <section class="panel decision-panel">
+        <div class="decision-head">
+          <h2>Decision Preview</h2>
+          <span class="decision-badge" [ngClass]="decisionPreview().status">
+            {{ decisionStatusLabel() }}
+          </span>
+        </div>
+        <p class="muted">{{ decisionPreview().rationale }}</p>
+        <ul *ngIf="decisionPreview().blockers.length > 0">
+          <li *ngFor="let blocker of decisionPreview().blockers">{{ blocker }}</li>
+        </ul>
+      </section>
+
       <footer class="panel nav-panel">
         <button type="button" class="ghost" (click)="goPrevious()" [disabled]="currentStep() === 0">Back</button>
         <div class="step-status">
@@ -489,6 +502,54 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       gap: 0.55rem;
     }
 
+    .decision-panel {
+      display: grid;
+      gap: 0.45rem;
+      border-color: #d5e2ee;
+    }
+
+    .decision-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+    }
+
+    .decision-badge {
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .decision-badge.go {
+      color: #1f6e44;
+      background: #ddf3e7;
+      border-color: #b3ddc8;
+    }
+
+    .decision-badge.no_go {
+      color: #8a2f1f;
+      background: #f9dfd8;
+      border-color: #ecb5a8;
+    }
+
+    .decision-badge.needs_review {
+      color: #7b4a00;
+      background: #fcefd4;
+      border-color: #f3d499;
+    }
+
+    .decision-panel ul {
+      margin: 0;
+      padding-left: 1rem;
+      color: #4f6174;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
     .ai-head {
       display: flex;
       align-items: center;
@@ -654,6 +715,7 @@ export class ProposalsNewWizardComponent {
   readonly state = computed(() => this.service.state());
   readonly currentStep = computed(() => this.service.currentStep());
   readonly assessment = computed(() => this.service.assessment());
+  readonly decisionPreview = computed(() => this.service.decisionPreview());
   readonly currentStepIssues = computed(() => this.service.getStepIssues(this.currentStep()));
   readonly selectedScopeSummary = computed(() => {
     const labels = this.service.selectedScopeLabels();
@@ -688,6 +750,17 @@ export class ProposalsNewWizardComponent {
 
   canAdvanceFromCurrentStep(): boolean {
     return this.service.canAdvanceFromCurrentStep();
+  }
+
+  decisionStatusLabel(): string {
+    const status = this.decisionPreview().status;
+    if (status === 'go') {
+      return 'Go';
+    }
+    if (status === 'no_go') {
+      return 'No Go';
+    }
+    return 'Needs Review';
   }
 
   askAiSuggestion(): void {
