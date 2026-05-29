@@ -41,7 +41,7 @@ export const appConfig: ApplicationConfig = {
     {
       provide: PROPOSAL_WIZARD_API,
       useFactory: () => {
-        const mode = inject(RuntimeConfigService).config.app.proposalApiMode;
+        const mode = inject(RuntimeConfigService).config.app.proposalWizardApiMode;
         return mode === 'http'
           ? inject(ProposalWizardHttpApiService)
           : inject(ProposalWizardMockApiService);

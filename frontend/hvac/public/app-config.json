@@ -1,6 +1,8 @@
 {
   "app": {
     "proposalApiMode": "mock",
+    "proposalWizardApiMode": "mock",
+    "proposalWizardApiBaseUrl": "",
     "authMode": "local"
   },
   "cognito": {

@@ -17,6 +17,8 @@ const defaultRuntimeConfig: RuntimeAppConfig = {
   },
   app: {
     proposalApiMode: 'mock',
+    proposalWizardApiMode: 'mock',
+    proposalWizardApiBaseUrl: '',
     authMode: 'local'
   }
 };
@@ -102,6 +104,16 @@ export class RuntimeConfigService {
       },
       app: {
         proposalApiMode: candidate.app?.proposalApiMode === 'http' ? 'http' : 'mock',
+        proposalWizardApiMode:
+          candidate.app?.proposalWizardApiMode === 'http'
+            ? 'http'
+            : candidate.app?.proposalApiMode === 'http'
+              ? 'http'
+              : 'mock',
+        proposalWizardApiBaseUrl:
+          typeof candidate.app?.proposalWizardApiBaseUrl === 'string'
+            ? candidate.app.proposalWizardApiBaseUrl.replace(/\/$/, '')
+            : '',
         authMode: candidate.app?.authMode === 'cognito' ? 'cognito' : 'local'
       }
     };

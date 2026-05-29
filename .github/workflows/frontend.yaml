@@ -50,19 +50,29 @@ jobs:
             cognito_user_pool_id="${{ vars.PROD_COGNITO_USER_POOL_ID }}"
             cognito_user_pool_client_id="${{ vars.PROD_COGNITO_USER_POOL_CLIENT_ID }}"
             cognito_domain="${{ vars.PROD_COGNITO_DOMAIN }}"
+            proposal_wizard_api_base_url="${{ vars.PROD_PROPOSAL_WIZARD_API_BASE_URL }}"
           else
             frontend_base_url="${{ vars.DEV_FRONTEND_BASE_URL }}"
             cognito_user_pool_id="${{ vars.DEV_COGNITO_USER_POOL_ID }}"
             cognito_user_pool_client_id="${{ vars.DEV_COGNITO_USER_POOL_CLIENT_ID }}"
             cognito_domain="${{ vars.DEV_COGNITO_DOMAIN }}"
+            proposal_wizard_api_base_url="${{ vars.DEV_PROPOSAL_WIZARD_API_BASE_URL }}"
           fi
 
           frontend_base_url="${frontend_base_url%/}"
+          proposal_wizard_api_base_url="${proposal_wizard_api_base_url%/}"
+
+          proposal_wizard_api_mode="mock"
+          if [[ -n "$proposal_wizard_api_base_url" ]]; then
+            proposal_wizard_api_mode="http"
+          fi
 
           cat > public/app-config.json <<EOF
           {
             "app": {
               "proposalApiMode": "mock",
+              "proposalWizardApiMode": "${proposal_wizard_api_mode}",
+              "proposalWizardApiBaseUrl": "${proposal_wizard_api_base_url}",
               "authMode": "cognito"
             },
             "cognito": {

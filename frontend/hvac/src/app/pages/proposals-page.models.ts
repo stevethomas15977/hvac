@@ -90,5 +90,7 @@ export interface BidOpportunity {
 
 export interface ProposalAppConfig {
   proposalApiMode?: 'mock' | 'http';
+  proposalWizardApiMode?: 'mock' | 'http';
+  proposalWizardApiBaseUrl?: string;
   authMode?: 'local' | 'cognito';
 }
