@@ -1,4 +1,4 @@
-import { Inject, Injectable, computed, effect, inject, signal } from '@angular/core';
+import { Inject, Injectable, Injector, computed, effect, inject, signal } from '@angular/core';
 import { finalize } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
 import { PROPOSAL_WIZARD_API, ProposalWizardApi, ProposalWizardSubmissionReceipt } from './proposal-wizard-api';
@@ -125,6 +125,7 @@ function defaultState(): ProposalWizardState {
 @Injectable({ providedIn: 'root' })
 export class ProposalWizardService {
   private readonly auth = inject(AuthService);
+  private readonly injector = inject(Injector);
 
   readonly state = signal<ProposalWizardState>(defaultState());
   readonly currentStep = signal(0);
@@ -132,6 +133,7 @@ export class ProposalWizardService {
   readonly isSubmitting = signal(false);
   readonly submitErrorMessage = signal<string | null>(null);
   readonly lastSubmissionReceipt = signal<ProposalWizardSubmissionReceipt | null>(null);
+  readonly lastSubmittedSnapshot = signal<string | null>(null);
 
   readonly selectedScopeLabels = computed(() => {
     const scope = this.state().scope;
@@ -162,6 +164,15 @@ export class ProposalWizardService {
 
   readonly decisionPreview = computed<ProposalDecisionPreview>(() => this.computeDecisionPreview());
   readonly decisionPacket = computed<ProposalDecisionPacket>(() => this.computeDecisionPacket());
+  readonly hasChangesSinceLastSubmission = computed(() => {
+    const previous = this.lastSubmittedSnapshot();
+    if (!previous) {
+      return true;
+    }
+
+    return previous !== this.toSubmissionSnapshot(this.state());
+  });
+  readonly canSubmitForReview = computed(() => !this.isSubmitting() && (this.lastSubmissionReceipt() === null || this.hasChangesSinceLastSubmission()));
 
   private hasInitialized = false;
 
@@ -189,7 +200,7 @@ export class ProposalWizardService {
       };
 
       window.localStorage.setItem(this.storageKey(username), JSON.stringify(payload));
-    });
+    }, { injector: this.injector });
   }
 
   setCurrentStep(stepIndex: number): void {
@@ -275,6 +286,7 @@ export class ProposalWizardService {
     this.restoredFromDraft.set(false);
     this.submitErrorMessage.set(null);
     this.lastSubmissionReceipt.set(null);
+    this.lastSubmittedSnapshot.set(null);
   }
 
   canSelectRecommendation(status: ProposalRecommendationStatus): boolean {
@@ -319,10 +331,18 @@ export class ProposalWizardService {
   }
 
   submitForReview(): void {
+    if (!this.canSubmitForReview()) {
+      return;
+    }
+
     const recommendation = this.state().finalDecision.recommendation;
     const normalizedRecommendation = recommendation ?? 'needs_review';
 
     if (!this.canSelectRecommendation(normalizedRecommendation)) {
+      this.setFinalRecommendation('needs_review');
+    }
+
+    if (this.state().finalDecision.recommendation === null) {
       this.setFinalRecommendation('needs_review');
     }
 
@@ -342,6 +362,7 @@ export class ProposalWizardService {
       .subscribe({
         next: (receipt) => {
           this.lastSubmissionReceipt.set(receipt);
+          this.lastSubmittedSnapshot.set(this.toSubmissionSnapshot(this.state()));
           this.state.update((current) => ({
             ...current,
             finalDecision: {
@@ -356,6 +377,10 @@ export class ProposalWizardService {
           this.submitErrorMessage.set(this.toErrorMessage(error));
         }
       });
+  }
+
+  retrySubmission(): void {
+    this.submitForReview();
   }
 
   canAdvanceFromCurrentStep(): boolean {
@@ -647,6 +672,21 @@ export class ProposalWizardService {
     }
 
     return Array.from(codes.values());
+  }
+
+  private toSubmissionSnapshot(state: ProposalWizardState): string {
+    const snapshot = {
+      source: state.source,
+      documents: state.documents,
+      scope: state.scope,
+      eligibility: state.eligibility,
+      finalDecision: {
+        recommendation: state.finalDecision.recommendation,
+        reviewNotes: state.finalDecision.reviewNotes
+      }
+    };
+
+    return JSON.stringify(snapshot);
   }
 
   private toErrorMessage(error: unknown): string {

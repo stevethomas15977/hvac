@@ -278,7 +278,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
           </label>
 
           <div class="packet-actions">
-            <button type="button" (click)="submitForReview()" [disabled]="isSubmitting()">
+            <button type="button" (click)="submitForReview()" [disabled]="!canSubmitForReview()">
               {{ isSubmitting() ? 'Submitting...' : 'Submit for Review' }}
             </button>
             <p class="inline-message" *ngIf="state().finalDecision.submittedForReview">
@@ -287,7 +287,13 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             <p class="inline-message" *ngIf="lastSubmissionReceipt()">
               Submission ID: {{ lastSubmissionReceipt()?.submissionId }} ({{ lastSubmissionReceipt()?.reviewQueue }}).
             </p>
+            <p class="inline-message" *ngIf="lastSubmissionReceipt() && !hasChangesSinceLastSubmission()">
+              No changes since last submission.
+            </p>
             <p class="step-warning" *ngIf="submitErrorMessage()">{{ submitErrorMessage() }}</p>
+            <button type="button" class="ghost" *ngIf="submitErrorMessage() && !isSubmitting()" (click)="retrySubmission()">
+              Retry Submit
+            </button>
           </div>
         </article>
       </section>
@@ -905,6 +911,8 @@ export class ProposalsNewWizardComponent {
   readonly decisionPreview = computed(() => this.service.decisionPreview());
   readonly decisionPacket = computed(() => this.service.decisionPacket());
   readonly isSubmitting = computed(() => this.service.isSubmitting());
+  readonly canSubmitForReview = computed(() => this.service.canSubmitForReview());
+  readonly hasChangesSinceLastSubmission = computed(() => this.service.hasChangesSinceLastSubmission());
   readonly submitErrorMessage = computed(() => this.service.submitErrorMessage());
   readonly lastSubmissionReceipt = computed(() => this.service.lastSubmissionReceipt());
   readonly currentStepIssues = computed(() => this.service.getStepIssues(this.currentStep()));
@@ -957,6 +965,10 @@ export class ProposalsNewWizardComponent {
 
   submitForReview(): void {
     this.service.submitForReview();
+  }
+
+  retrySubmission(): void {
+    this.service.retrySubmission();
   }
 
   formatSubmittedAt(value: string | null): string {
