@@ -93,4 +93,15 @@ describe('ProposalWizardService', () => {
     expect(service.hasChangesSinceLastSubmission()).toBeTrue();
     expect(service.canSubmitForReview()).toBeTrue();
   });
+
+  it('clears unload warning after submit and re-enables warning on later edits', () => {
+    service.updateSourceField('projectName', 'Dirty Draft');
+    expect(service.shouldWarnBeforeUnload()).toBeTrue();
+
+    service.submitForReview();
+    expect(service.shouldWarnBeforeUnload()).toBeFalse();
+
+    service.updateReviewNotes('post-submit change');
+    expect(service.shouldWarnBeforeUnload()).toBeTrue();
+  });
 });

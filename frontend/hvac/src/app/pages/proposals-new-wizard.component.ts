@@ -1,5 +1,5 @@
 import { DecimalPipe, NgClass, NgFor, NgIf, NgSwitch, NgSwitchCase } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProposalWizardService } from './proposal-wizard.service';
 
@@ -24,16 +24,27 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         </div>
         <div class="header-actions">
           <button type="button" class="ghost" (click)="openHelpDrawer()">Quick Help</button>
-          <button type="button" class="ghost" (click)="service.clearDraft()">Reset Draft</button>
+          <button type="button" class="ghost" (click)="confirmResetDraft()">Reset Draft</button>
         </div>
       </header>
+
+      <section class="panel status-panel" aria-live="polite">
+        <p class="status-line success" *ngIf="lastSubmissionReceipt()">Submission recorded in review queue.</p>
+        <p class="status-line warning" *ngIf="shouldWarnBeforeUnload()">Unsaved changes are present.</p>
+        <p class="status-line error" *ngIf="submitErrorMessage()">Submission failed. You can retry safely.</p>
+      </section>
 
       <section class="panel stepper-panel">
         <article
           class="step-chip"
           *ngFor="let step of steps"
+          role="button"
+          tabindex="0"
+          [attr.aria-current]="currentStep() === step.id ? 'step' : null"
           [ngClass]="{ active: currentStep() === step.id, complete: isStepComplete(step.id), incomplete: !isStepComplete(step.id) }"
-          (click)="service.setCurrentStep(step.id)">
+          (click)="service.setCurrentStep(step.id)"
+          (keydown.enter)="service.setCurrentStep(step.id)"
+          (keydown.space)="onStepSpace($event, step.id)">
           <div class="step-index">{{ step.id + 1 }}</div>
           <div>
             <strong>{{ step.title }}</strong>
@@ -65,6 +76,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             <label>
               Project Name
               <input [ngModel]="state().source.projectName" (ngModelChange)="service.updateSourceField('projectName', $event)" />
+              <small class="field-error" *ngIf="showFieldError(0, 'project name')">Project name is required.</small>
             </label>
             <label>
               Project Number
@@ -77,6 +89,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             <label>
               Contractor
               <input [ngModel]="state().source.contractorName" (ngModelChange)="service.updateSourceField('contractorName', $event)" />
+              <small class="field-error" *ngIf="showFieldError(0, 'contractor')">Contractor is required.</small>
             </label>
             <label>
               Contact Email
@@ -84,6 +97,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             </label>
             <label>
               Bid Visibility
+              <small class="field-error" *ngIf="showFieldError(0, 'bid due date')">Bid due date is required.</small>
               <select [ngModel]="state().source.bidVisibility" (ngModelChange)="service.updateSourceField('bidVisibility', $event)">
                 <option value="unknown">Unknown</option>
                 <option value="open_bid">Open Bid</option>
@@ -143,6 +157,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             <label>
               Represented Manufacturer
               <input [ngModel]="state().eligibility.representedManufacturer" (ngModelChange)="service.updateEligibilityField('representedManufacturer', $event)" />
+              <small class="field-error" *ngIf="showFieldError(3, 'represented manufacturer')">Represented manufacturer is required.</small>
             </label>
             <label class="full-row">
               Approved Manufacturers (comma or newline separated)
@@ -150,6 +165,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
                 [ngModel]="state().eligibility.approvedManufacturersRaw"
                 (ngModelChange)="service.updateEligibilityField('approvedManufacturersRaw', $event)"
                 placeholder="Marley, BAC, Evapco"></textarea>
+              <small class="field-error" *ngIf="showFieldError(3, 'approved manufacturer list')">Approved manufacturer list is required.</small>
             </label>
           </div>
 
@@ -417,6 +433,31 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       font-size: 0.84rem;
     }
 
+    .status-panel {
+      display: grid;
+      gap: 0.35rem;
+      border-color: #d2e1ef;
+      background: #f8fbff;
+      padding-block: 0.75rem;
+    }
+
+    .status-line {
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .status-line.success {
+      color: #1f6e44;
+    }
+
+    .status-line.warning {
+      color: #7a4d07;
+    }
+
+    .status-line.error {
+      color: #8d4332;
+    }
+
     .header-actions {
       display: flex;
       gap: 0.5rem;
@@ -514,6 +555,12 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       gap: 0.35rem;
       font-size: 0.82rem;
       color: #3d5a75;
+    }
+
+    .field-error {
+      color: #8d4332;
+      font-size: 0.76rem;
+      line-height: 1.2;
     }
 
     .form-grid .full-row {
@@ -915,6 +962,7 @@ export class ProposalsNewWizardComponent {
   readonly hasChangesSinceLastSubmission = computed(() => this.service.hasChangesSinceLastSubmission());
   readonly submitErrorMessage = computed(() => this.service.submitErrorMessage());
   readonly lastSubmissionReceipt = computed(() => this.service.lastSubmissionReceipt());
+  readonly shouldWarnBeforeUnload = computed(() => this.service.shouldWarnBeforeUnload());
   readonly currentStepIssues = computed(() => this.service.getStepIssues(this.currentStep()));
   readonly selectedScopeSummary = computed(() => {
     const labels = this.service.selectedScopeLabels();
@@ -929,6 +977,32 @@ export class ProposalsNewWizardComponent {
     const input = event.target as HTMLInputElement;
     this.service.addDocuments(input.files);
     input.value = '';
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.shouldWarnBeforeUnload()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
+  onStepSpace(event: Event, stepId: number): void {
+    event.preventDefault();
+    this.service.setCurrentStep(stepId);
+  }
+
+  confirmResetDraft(): void {
+    if (this.shouldWarnBeforeUnload()) {
+      const confirmed = window.confirm('Discard current draft changes?');
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    this.service.clearDraft();
   }
 
   goPrevious(): void {
@@ -969,6 +1043,10 @@ export class ProposalsNewWizardComponent {
 
   retrySubmission(): void {
     this.service.retrySubmission();
+  }
+
+  showFieldError(stepId: number, fieldFragment: string): boolean {
+    return this.currentStep() === stepId && this.service.hasStepIssueContaining(stepId, fieldFragment);
   }
 
   formatSubmittedAt(value: string | null): string {

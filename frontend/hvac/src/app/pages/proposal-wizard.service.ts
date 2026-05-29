@@ -164,6 +164,7 @@ export class ProposalWizardService {
 
   readonly decisionPreview = computed<ProposalDecisionPreview>(() => this.computeDecisionPreview());
   readonly decisionPacket = computed<ProposalDecisionPacket>(() => this.computeDecisionPacket());
+  readonly hasDraftContent = computed(() => this.toSubmissionSnapshot(this.state()) !== this.toSubmissionSnapshot(defaultState()));
   readonly hasChangesSinceLastSubmission = computed(() => {
     const previous = this.lastSubmittedSnapshot();
     if (!previous) {
@@ -173,6 +174,17 @@ export class ProposalWizardService {
     return previous !== this.toSubmissionSnapshot(this.state());
   });
   readonly canSubmitForReview = computed(() => !this.isSubmitting() && (this.lastSubmissionReceipt() === null || this.hasChangesSinceLastSubmission()));
+  readonly shouldWarnBeforeUnload = computed(() => {
+    if (!this.hasDraftContent()) {
+      return false;
+    }
+
+    if (this.lastSubmissionReceipt() === null) {
+      return true;
+    }
+
+    return this.hasChangesSinceLastSubmission();
+  });
 
   private hasInitialized = false;
 
@@ -394,6 +406,15 @@ export class ProposalWizardService {
 
   getStepIssues(step: number): string[] {
     return this.getStepValidation(step).issues;
+  }
+
+  hasStepIssueContaining(step: number, fragment: string): boolean {
+    const needle = fragment.trim().toLowerCase();
+    if (!needle) {
+      return false;
+    }
+
+    return this.getStepIssues(step).some((item) => item.toLowerCase().includes(needle));
   }
 
   private restoreDraftIfPresent(): void {
