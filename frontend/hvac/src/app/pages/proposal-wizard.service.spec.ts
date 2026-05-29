@@ -5,6 +5,7 @@ import { AuthService } from '../core/auth/auth.service';
 import {
   PROPOSAL_WIZARD_API,
   ProposalWizardApi,
+  ProposalWizardRecentSubmissionsResponse,
   ProposalWizardSubmissionPayload,
   ProposalWizardSubmissionReceipt
 } from './proposal-wizard-api';
@@ -18,6 +19,16 @@ class ProposalWizardApiMock implements ProposalWizardApi {
       reviewQueue: 'tenant-review',
       recommendation: payload.state.finalDecision.recommendation ?? 'needs_review',
       submittedAtIso: payload.submittedAtIso
+    };
+
+    return of(response);
+  }
+
+  getRecentSubmissions() {
+    const response: ProposalWizardRecentSubmissionsResponse = {
+      tenantId: 'development',
+      count: 0,
+      submissions: []
     };
 
     return of(response);

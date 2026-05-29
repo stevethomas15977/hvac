@@ -52,3 +52,11 @@ resource "aws_lambda_permission" "proposal_submission_from_apigateway" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.proposal_submission.execution_arn}/*/*"
 }
+
+resource "aws_apigatewayv2_route" "proposal_submissions_recent_get" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "GET /api/proposals/wizard/submissions/recent"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
