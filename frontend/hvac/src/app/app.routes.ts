@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/guards/auth.guard';
-import { groupGuard } from './core/auth/guards/group.guard';
+import { tenantAdminGuard } from './core/auth/guards/tenant-admin.guard';
 import { AppShellComponent } from './layout/app-shell.component';
 import { AdminPageComponent } from './pages/admin-page.component';
 import { AuthCallbackComponent } from './pages/auth-callback.component';
@@ -32,10 +32,7 @@ export const routes: Routes = [
 			},
 			{
 				path: 'admin',
-				canActivate: [groupGuard],
-				data: {
-					requiredGroups: ['Softwarelikeyou']
-				},
+				canActivate: [tenantAdminGuard],
 				component: AdminPageComponent
 			},
 			{

@@ -1,10 +1,11 @@
+import { NgIf } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../core/auth/auth.service';
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [NgIf, RouterLink, RouterLinkActive, RouterOutlet],
   template: `
     <div class="dashboard-shell">
       <header class="top-nav">
@@ -12,7 +13,7 @@ import { AuthService } from '../core/auth/auth.service';
         <nav class="nav-links" aria-label="Main">
           <a routerLink="/app/dashboard" routerLinkActive="active">Dashboard</a>
           <a routerLink="/app/proposals" routerLinkActive="active">Proposals</a>
-          <a routerLink="/app/admin" routerLinkActive="active">Admin</a>
+          <a *ngIf="auth.isTenantAdmin()" routerLink="/app/admin" routerLinkActive="active">Admin</a>
         </nav>
         <div class="profile-actions">
           <span class="username">{{ auth.currentUsername() }}</span>

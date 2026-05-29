@@ -8,6 +8,7 @@ export class AuthService {
   private readonly runtimeConfig = inject(RuntimeConfigService);
 
   readonly currentUsername = signal<string | null>(null);
+  readonly isTenantAdmin = signal(false);
   readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
 
@@ -26,6 +27,7 @@ export class AuthService {
 
     if (this.isLocalAuthMode()) {
       this.currentUsername.set('local.estimator');
+      this.isTenantAdmin.set(true);
       return;
     }
 
@@ -35,6 +37,7 @@ export class AuthService {
   async startHostedSignIn(): Promise<void> {
     if (this.isLocalAuthMode()) {
       this.currentUsername.set('local.estimator');
+      this.isTenantAdmin.set(true);
       return;
     }
 
@@ -59,6 +62,7 @@ export class AuthService {
   async signOutUser(): Promise<void> {
     if (this.isLocalAuthMode()) {
       this.currentUsername.set(null);
+      this.isTenantAdmin.set(false);
       return;
     }
 
@@ -68,12 +72,25 @@ export class AuthService {
     try {
       await signOut();
       this.currentUsername.set(null);
+      this.isTenantAdmin.set(false);
     } catch (error) {
       this.errorMessage.set(this.toErrorMessage(error));
       throw error;
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  async hasTenantAdminAccess(): Promise<boolean> {
+    if (this.isLocalAuthMode()) {
+      this.isTenantAdmin.set(true);
+      return true;
+    }
+
+    const session = await fetchAuthSession();
+    const tenantAdmin = this.toBooleanClaimValue(session.tokens?.idToken?.payload['custom:tenant_admin']);
+    this.isTenantAdmin.set(tenantAdmin);
+    return tenantAdmin;
   }
 
   async getUserGroups(): Promise<string[]> {
@@ -100,9 +117,15 @@ export class AuthService {
     try {
       const user = await getCurrentUser();
       this.currentUsername.set(user.username);
+      await this.hasTenantAdminAccess();
     } catch {
       this.currentUsername.set(null);
+      this.isTenantAdmin.set(false);
     }
+  }
+
+  private toBooleanClaimValue(value: unknown): boolean {
+    return value === true || value === 'true' || value === 'yes';
   }
 
   private toErrorMessage(error: unknown): string {
