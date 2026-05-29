@@ -1,5 +1,7 @@
-import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { Inject, Injectable, computed, effect, inject, signal } from '@angular/core';
+import { finalize } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
+import { PROPOSAL_WIZARD_API, ProposalWizardApi, ProposalWizardSubmissionReceipt } from './proposal-wizard-api';
 
 export type ProposalSourceType = 'email' | 'procore' | 'constructconnect' | 'shared_drive' | 'dropbox' | 'direct_link' | 'other';
 export type BidVisibility = 'open_bid' | 'closed_bid' | 'invited' | 'basis_of_design' | 'unknown';
@@ -33,6 +35,12 @@ export interface ProposalWizardState {
     representedManufacturer: string;
     approvedManufacturersRaw: string;
   };
+  finalDecision: {
+    recommendation: ProposalRecommendationStatus | null;
+    reviewNotes: string;
+    submittedForReview: boolean;
+    submittedAtIso: string | null;
+  };
 }
 
 interface PersistedDraft {
@@ -63,6 +71,23 @@ export interface ProposalDecisionPreview {
   blockers: string[];
 }
 
+export interface ProposalDecisionPacket {
+  evidenceSummary: {
+    invitationCount: number;
+    mSheetCount: number;
+    specificationCount: number;
+    addendumCount: number;
+  };
+  scopeSummary: string[];
+  manufacturerEligibility: {
+    representedManufacturer: string;
+    approvedManufacturers: string[];
+    isEligible: boolean;
+  };
+  reasonCodes: string[];
+  blockers: string[];
+}
+
 const DRAFT_VERSION = 1;
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -87,6 +112,12 @@ function defaultState(): ProposalWizardState {
     eligibility: {
       representedManufacturer: 'Marley',
       approvedManufacturersRaw: ''
+    },
+    finalDecision: {
+      recommendation: null,
+      reviewNotes: '',
+      submittedForReview: false,
+      submittedAtIso: null
     }
   };
 }
@@ -98,6 +129,9 @@ export class ProposalWizardService {
   readonly state = signal<ProposalWizardState>(defaultState());
   readonly currentStep = signal(0);
   readonly restoredFromDraft = signal(false);
+  readonly isSubmitting = signal(false);
+  readonly submitErrorMessage = signal<string | null>(null);
+  readonly lastSubmissionReceipt = signal<ProposalWizardSubmissionReceipt | null>(null);
 
   readonly selectedScopeLabels = computed(() => {
     const scope = this.state().scope;
@@ -127,8 +161,11 @@ export class ProposalWizardService {
   }));
 
   readonly decisionPreview = computed<ProposalDecisionPreview>(() => this.computeDecisionPreview());
+  readonly decisionPacket = computed<ProposalDecisionPacket>(() => this.computeDecisionPacket());
 
   private hasInitialized = false;
+
+  constructor(@Inject(PROPOSAL_WIZARD_API) private readonly api: ProposalWizardApi) {}
 
   initialize(): void {
     if (this.hasInitialized) {
@@ -236,6 +273,89 @@ export class ProposalWizardService {
     this.currentStep.set(0);
     this.state.set(defaultState());
     this.restoredFromDraft.set(false);
+    this.submitErrorMessage.set(null);
+    this.lastSubmissionReceipt.set(null);
+  }
+
+  canSelectRecommendation(status: ProposalRecommendationStatus): boolean {
+    if (status === 'needs_review') {
+      return true;
+    }
+
+    return this.assessment().canProceedToDecision;
+  }
+
+  setFinalRecommendation(status: ProposalRecommendationStatus): boolean {
+    if (!this.canSelectRecommendation(status)) {
+      this.state.update((current) => ({
+        ...current,
+        finalDecision: {
+          ...current.finalDecision,
+          recommendation: 'needs_review'
+        }
+      }));
+      return false;
+    }
+
+    this.state.update((current) => ({
+      ...current,
+      finalDecision: {
+        ...current.finalDecision,
+        recommendation: status
+      }
+    }));
+
+    return true;
+  }
+
+  updateReviewNotes(notes: string): void {
+    this.state.update((current) => ({
+      ...current,
+      finalDecision: {
+        ...current.finalDecision,
+        reviewNotes: notes
+      }
+    }));
+  }
+
+  submitForReview(): void {
+    const recommendation = this.state().finalDecision.recommendation;
+    const normalizedRecommendation = recommendation ?? 'needs_review';
+
+    if (!this.canSelectRecommendation(normalizedRecommendation)) {
+      this.setFinalRecommendation('needs_review');
+    }
+
+    const submissionTimestamp = new Date().toISOString();
+    this.isSubmitting.set(true);
+    this.submitErrorMessage.set(null);
+
+    this.api
+      .submitDecisionPacket({
+        state: this.state(),
+        decisionPacket: this.decisionPacket(),
+        decisionPreview: this.decisionPreview(),
+        submittedBy: this.auth.currentUsername(),
+        submittedAtIso: submissionTimestamp
+      })
+      .pipe(finalize(() => this.isSubmitting.set(false)))
+      .subscribe({
+        next: (receipt) => {
+          this.lastSubmissionReceipt.set(receipt);
+          this.state.update((current) => ({
+            ...current,
+            finalDecision: {
+              ...current.finalDecision,
+              recommendation: current.finalDecision.recommendation ?? 'needs_review',
+              submittedForReview: true,
+              submittedAtIso: receipt.submittedAtIso
+            }
+          }));
+        },
+        error: (error: unknown) => {
+          this.submitErrorMessage.set(this.toErrorMessage(error));
+        }
+      });
   }
 
   canAdvanceFromCurrentStep(): boolean {
@@ -451,5 +571,89 @@ export class ProposalWizardService {
       rationale: 'Current draft has required MVP scope and no evidence conflicts.',
       blockers: []
     };
+  }
+
+  private computeDecisionPacket(): ProposalDecisionPacket {
+    const current = this.state();
+    const assessment = this.computeAssessment();
+    const scopeSummary = this.selectedScopeLabels();
+    const blockers: string[] = [];
+
+    for (const step of [0, 1, 2, 3]) {
+      blockers.push(...this.getStepValidation(step).issues);
+    }
+
+    blockers.push(...assessment.missingEvidence);
+    if (assessment.hasConflict) {
+      blockers.push('Represented manufacturer conflicts with approved manufacturers.');
+    }
+
+    const docs = current.documents;
+    const evidenceSummary = {
+      invitationCount: docs.filter((item) => item.type === 'invitation').length,
+      mSheetCount: docs.filter((item) => item.type === 'm_sheet').length,
+      specificationCount: docs.filter((item) => item.type === 'specification').length,
+      addendumCount: docs.filter((item) => item.type === 'addendum').length
+    };
+
+    const reasonCodes = this.toReasonCodes(blockers, scopeSummary);
+
+    return {
+      evidenceSummary,
+      scopeSummary,
+      manufacturerEligibility: {
+        representedManufacturer: assessment.representedManufacturer,
+        approvedManufacturers: assessment.approvedManufacturers,
+        isEligible: !assessment.hasConflict && assessment.approvedManufacturers.length > 0
+      },
+      reasonCodes,
+      blockers
+    };
+  }
+
+  private toReasonCodes(blockers: string[], scopeSummary: string[]): string[] {
+    const codes = new Set<string>();
+
+    if (blockers.some((item) => item.toLowerCase().includes('project name') || item.toLowerCase().includes('contractor') || item.toLowerCase().includes('bid due date'))) {
+      codes.add('SRC_METADATA_MISSING');
+    }
+    if (blockers.some((item) => item.toLowerCase().includes('document'))) {
+      codes.add('DOC_UPLOAD_MISSING');
+    }
+    if (blockers.some((item) => item.toLowerCase().includes('invitation'))) {
+      codes.add('EVID_BID_INVITE_MISSING');
+    }
+    if (blockers.some((item) => item.toLowerCase().includes('m-sheet') || item.toLowerCase().includes('mechanical schedules'))) {
+      codes.add('EVID_MSHEET_MISSING');
+    }
+    if (blockers.some((item) => item.toLowerCase().includes('specification'))) {
+      codes.add('EVID_SPEC_MISSING');
+    }
+    if (blockers.some((item) => item.toLowerCase().includes('addenda'))) {
+      codes.add('EVID_ADDENDA_UNVERIFIED');
+    }
+    if (blockers.some((item) => item.toLowerCase().includes('conflict'))) {
+      codes.add('MFG_CONFLICT');
+    }
+    if (scopeSummary.length === 0) {
+      codes.add('SCOPE_UNSELECTED');
+    }
+    if (scopeSummary.length > 0 && scopeSummary.every((item) => item === 'Heat Exchangers')) {
+      codes.add('SCOPE_MVP_OUTSIDE');
+    }
+
+    if (codes.size === 0) {
+      codes.add('READY_FOR_DECISION');
+    }
+
+    return Array.from(codes.values());
+  }
+
+  private toErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
+    return 'Unable to submit decision packet.';
   }
 }

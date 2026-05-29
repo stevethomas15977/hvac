@@ -146,3 +146,23 @@ Build later:
 - Automated model selection
 - Full proposal generation
 - Submittal automation
+
+## 12) Post-MVP Backend Integration (Pinned)
+The following work is intentionally deferred until after MVP acceptance criteria are met.
+
+### Deferred architecture work
+- API Gateway endpoint implementation for decision packet submissions
+- Lambda validation and policy recomputation (server-side enforcement)
+- Cognito/JWT authorizer integration for tenant-scoped access control
+- DynamoDB persistence model for immutable decision packet audit records
+- Event fan-out (optional) for review queues and downstream automation
+
+### Deferred API contract hardening
+- Request schema validation and versioning strategy
+- Idempotency keys for safe retries
+- Error contract standardization
+- Structured observability: correlation IDs, metrics, alerting
+
+### MVP boundary rule
+- During MVP, submission flow uses mock-mode contract in Angular and local/development validation.
+- Production-grade API infrastructure will start only after pilot validation confirms workflow, policy, and UX are stable.

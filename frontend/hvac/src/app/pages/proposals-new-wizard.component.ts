@@ -192,6 +192,106 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         </ul>
       </section>
 
+      <section class="panel packet-panel">
+        <h2>Decision Packet (Slice B)</h2>
+        <p class="muted">Explainable evidence summary and reason codes for final recommendation.</p>
+
+        <div class="packet-grid">
+          <article class="packet-card">
+            <h3>Evidence Summary</h3>
+            <ul>
+              <li>Bid Invitations: {{ decisionPacket().evidenceSummary.invitationCount }}</li>
+              <li>M-Sheets: {{ decisionPacket().evidenceSummary.mSheetCount }}</li>
+              <li>Specifications: {{ decisionPacket().evidenceSummary.specificationCount }}</li>
+              <li>Addenda: {{ decisionPacket().evidenceSummary.addendumCount }}</li>
+            </ul>
+          </article>
+
+          <article class="packet-card">
+            <h3>Scope Summary</h3>
+            <ul *ngIf="decisionPacket().scopeSummary.length > 0; else noScopeSummary">
+              <li *ngFor="let item of decisionPacket().scopeSummary">{{ item }}</li>
+            </ul>
+            <ng-template #noScopeSummary>
+              <p class="muted">No scope selected.</p>
+            </ng-template>
+          </article>
+
+          <article class="packet-card">
+            <h3>Manufacturer Eligibility</h3>
+            <p>Represented: {{ decisionPacket().manufacturerEligibility.representedManufacturer || 'Not set' }}</p>
+            <p>Approved count: {{ decisionPacket().manufacturerEligibility.approvedManufacturers.length }}</p>
+            <p [ngClass]="{ eligible: decisionPacket().manufacturerEligibility.isEligible, ineligible: !decisionPacket().manufacturerEligibility.isEligible }">
+              {{ decisionPacket().manufacturerEligibility.isEligible ? 'Eligible' : 'Needs review' }}
+            </p>
+          </article>
+        </div>
+
+        <article class="packet-card">
+          <h3>Reason Codes</h3>
+          <div class="code-row">
+            <span class="reason-code" *ngFor="let code of decisionPacket().reasonCodes">{{ code }}</span>
+          </div>
+        </article>
+
+        <article class="packet-card">
+          <h3>Final Recommendation</h3>
+          <div class="recommendation-grid">
+            <label>
+              <input
+                type="radio"
+                name="finalRecommendation"
+                [checked]="state().finalDecision.recommendation === 'go'"
+                [disabled]="!canSelectRecommendation('go')"
+                (change)="setFinalRecommendation('go')" />
+              Go
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="finalRecommendation"
+                [checked]="state().finalDecision.recommendation === 'no_go'"
+                [disabled]="!canSelectRecommendation('no_go')"
+                (change)="setFinalRecommendation('no_go')" />
+              No Go
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="finalRecommendation"
+                [checked]="state().finalDecision.recommendation === 'needs_review'"
+                (change)="setFinalRecommendation('needs_review')" />
+              Needs Review
+            </label>
+          </div>
+
+          <p class="muted" *ngIf="!canSelectRecommendation('go')">
+            Go/No Go are disabled until missing/conflicting evidence is resolved.
+          </p>
+
+          <label class="review-notes">
+            Review Notes
+            <textarea
+              [ngModel]="state().finalDecision.reviewNotes"
+              (ngModelChange)="updateReviewNotes($event)"
+              placeholder="Add context for reviewer or downstream estimator."></textarea>
+          </label>
+
+          <div class="packet-actions">
+            <button type="button" (click)="submitForReview()" [disabled]="isSubmitting()">
+              {{ isSubmitting() ? 'Submitting...' : 'Submit for Review' }}
+            </button>
+            <p class="inline-message" *ngIf="state().finalDecision.submittedForReview">
+              Submitted for review at {{ formatSubmittedAt(state().finalDecision.submittedAtIso) }}.
+            </p>
+            <p class="inline-message" *ngIf="lastSubmissionReceipt()">
+              Submission ID: {{ lastSubmissionReceipt()?.submissionId }} ({{ lastSubmissionReceipt()?.reviewQueue }}).
+            </p>
+            <p class="step-warning" *ngIf="submitErrorMessage()">{{ submitErrorMessage() }}</p>
+          </div>
+        </article>
+      </section>
+
       <footer class="panel nav-panel">
         <button type="button" class="ghost" (click)="goPrevious()" [disabled]="currentStep() === 0">Back</button>
         <div class="step-status">
@@ -508,6 +608,89 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       border-color: #d5e2ee;
     }
 
+    .packet-panel {
+      display: grid;
+      gap: 0.6rem;
+      border-color: #d5e2ee;
+    }
+
+    .packet-grid {
+      display: grid;
+      gap: 0.55rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .packet-card {
+      border: 1px solid #dbe6f0;
+      border-radius: 10px;
+      padding: 0.65rem;
+      display: grid;
+      gap: 0.4rem;
+      background: #fbfdff;
+    }
+
+    .packet-card ul {
+      margin: 0;
+      padding-left: 1rem;
+      color: #4f6174;
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .code-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .reason-code {
+      border: 1px solid #cddff0;
+      border-radius: 999px;
+      padding: 0.12rem 0.45rem;
+      background: #eef6ff;
+      color: #2c5073;
+      font-size: 0.74rem;
+      font-weight: 600;
+    }
+
+    .recommendation-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+      font-size: 0.84rem;
+      color: #35506c;
+    }
+
+    .recommendation-grid label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .review-notes {
+      display: grid;
+      gap: 0.35rem;
+      font-size: 0.82rem;
+      color: #3d5a75;
+    }
+
+    .packet-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: center;
+    }
+
+    .eligible {
+      color: #1f6e44;
+      font-weight: 600;
+    }
+
+    .ineligible {
+      color: #8a2f1f;
+      font-weight: 600;
+    }
+
     .decision-head {
       display: flex;
       align-items: center;
@@ -689,6 +872,10 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
+      .packet-grid {
+        grid-template-columns: 1fr;
+      }
+
       .form-grid {
         grid-template-columns: 1fr;
       }
@@ -716,6 +903,10 @@ export class ProposalsNewWizardComponent {
   readonly currentStep = computed(() => this.service.currentStep());
   readonly assessment = computed(() => this.service.assessment());
   readonly decisionPreview = computed(() => this.service.decisionPreview());
+  readonly decisionPacket = computed(() => this.service.decisionPacket());
+  readonly isSubmitting = computed(() => this.service.isSubmitting());
+  readonly submitErrorMessage = computed(() => this.service.submitErrorMessage());
+  readonly lastSubmissionReceipt = computed(() => this.service.lastSubmissionReceipt());
   readonly currentStepIssues = computed(() => this.service.getStepIssues(this.currentStep()));
   readonly selectedScopeSummary = computed(() => {
     const labels = this.service.selectedScopeLabels();
@@ -750,6 +941,35 @@ export class ProposalsNewWizardComponent {
 
   canAdvanceFromCurrentStep(): boolean {
     return this.service.canAdvanceFromCurrentStep();
+  }
+
+  canSelectRecommendation(status: 'go' | 'no_go' | 'needs_review'): boolean {
+    return this.service.canSelectRecommendation(status);
+  }
+
+  setFinalRecommendation(status: 'go' | 'no_go' | 'needs_review'): void {
+    this.service.setFinalRecommendation(status);
+  }
+
+  updateReviewNotes(notes: string): void {
+    this.service.updateReviewNotes(notes);
+  }
+
+  submitForReview(): void {
+    this.service.submitForReview();
+  }
+
+  formatSubmittedAt(value: string | null): string {
+    if (!value) {
+      return 'just now';
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return 'just now';
+    }
+
+    return parsed.toLocaleString();
   }
 
   decisionStatusLabel(): string {
