@@ -4,7 +4,7 @@ resource "aws_apigatewayv2_api" "proposal_submission" {
 
   cors_configuration {
     allow_headers  = ["authorization", "content-type", "x-tenant-id"]
-    allow_methods  = ["OPTIONS", "POST"]
+    allow_methods  = ["GET", "OPTIONS", "POST"]
     allow_origins  = local.proposal_api_allowed_origins
     expose_headers = ["content-type"]
     max_age        = 300
