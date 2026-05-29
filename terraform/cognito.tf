@@ -48,13 +48,13 @@ resource "aws_cognito_user_pool" "user_pool" {
 
   auto_verified_attributes = ["email"]
 
-  # Add custom attribute for tenant_id
-  # schema {
-  #   name = "tenant_id"
-  #   attribute_data_type = "String"
-  #   mutable = true
-  #   required = false
-  # }
+  # Tenant admin flag exposed as custom:tenant_admin in JWT claims.
+  schema {
+    name = "tenant_admin"
+    attribute_data_type = "Boolean"
+    mutable = true
+    required = false
+  }
 }
 
 # Define a Cognito User Pool Client
@@ -69,6 +69,15 @@ resource "aws_cognito_user_pool_client" "user_pool_client" {
   allowed_oauth_scopes                 = ["email", "openid", "profile"]
   callback_urls                        = local.cognito_callback_urls
   logout_urls                          = local.cognito_logout_urls
+  read_attributes = [
+    "email",
+    "email_verified",
+    "custom:tenant_admin"
+  ]
+  write_attributes = [
+    "email",
+    "custom:tenant_admin"
+  ]
   supported_identity_providers = ["COGNITO"]
 
   explicit_auth_flows = [
