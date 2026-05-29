@@ -11,8 +11,9 @@ import { AuthService } from '../core/auth/auth.service';
       <header class="top-nav">
         <div class="brand">HVAC Portal</div>
         <nav class="nav-links" aria-label="Main">
-          <a routerLink="/app/dashboard" routerLinkActive="active">Dashboard</a>
-          <a routerLink="/app/proposals" routerLinkActive="active">Proposals</a>
+          <a routerLink="/app/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
+          <a routerLink="/app/proposals" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Proposals</a>
+          <a routerLink="/app/proposals/new" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">New Proposal</a>
           <a *ngIf="auth.isTenantAdmin()" routerLink="/app/admin" routerLinkActive="active">Admin</a>
         </nav>
         <div class="profile-actions">

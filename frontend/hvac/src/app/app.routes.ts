@@ -6,6 +6,7 @@ import { AdminPageComponent } from './pages/admin-page.component';
 import { AuthCallbackComponent } from './pages/auth-callback.component';
 import { DashboardHomeComponent } from './pages/dashboard-home.component';
 import { LoggedOutComponent } from './pages/logged-out.component';
+import { ProposalsNewWizardComponent } from './pages/proposals-new-wizard.component';
 import { ProposalsPageComponent } from './pages/proposals-page.component';
 
 export const routes: Routes = [
@@ -29,6 +30,10 @@ export const routes: Routes = [
 			{
 				path: 'proposals',
 				component: ProposalsPageComponent
+			},
+			{
+				path: 'proposals/new',
+				component: ProposalsNewWizardComponent
 			},
 			{
 				path: 'admin',
