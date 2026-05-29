@@ -50,6 +50,11 @@ export interface QualificationPolicyAssessment {
   canProceedToDecision: boolean;
 }
 
+export interface WizardStepValidation {
+  isComplete: boolean;
+  issues: string[];
+}
+
 const DRAFT_VERSION = 1;
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -105,6 +110,13 @@ export class ProposalWizardService {
   });
 
   readonly assessment = computed<QualificationPolicyAssessment>(() => this.computeAssessment());
+
+  readonly stepValidations = computed<Record<number, WizardStepValidation>>(() => ({
+    0: this.validateStep0(),
+    1: this.validateStep1(),
+    2: this.validateStep2(),
+    3: this.validateStep3()
+  }));
 
   private hasInitialized = false;
 
@@ -216,6 +228,19 @@ export class ProposalWizardService {
     this.restoredFromDraft.set(false);
   }
 
+  canAdvanceFromCurrentStep(): boolean {
+    const step = this.currentStep();
+    return this.isStepComplete(step);
+  }
+
+  isStepComplete(step: number): boolean {
+    return this.getStepValidation(step).isComplete;
+  }
+
+  getStepIssues(step: number): string[] {
+    return this.getStepValidation(step).issues;
+  }
+
   private restoreDraftIfPresent(): void {
     const username = this.auth.currentUsername();
     if (!username) {
@@ -245,6 +270,81 @@ export class ProposalWizardService {
 
   private storageKey(username: string): string {
     return `hvac-proposal-wizard-${username}`;
+  }
+
+  private getStepValidation(step: number): WizardStepValidation {
+    const all = this.stepValidations();
+    return all[step] ?? { isComplete: false, issues: ['Unknown step.'] };
+  }
+
+  private validateStep0(): WizardStepValidation {
+    const source = this.state().source;
+    const issues: string[] = [];
+
+    if (!source.projectName.trim()) {
+      issues.push('Project name is required.');
+    }
+    if (!source.contractorName.trim()) {
+      issues.push('Contractor is required.');
+    }
+    if (!source.bidDueDate.trim()) {
+      issues.push('Bid due date is required.');
+    }
+
+    return {
+      isComplete: issues.length === 0,
+      issues
+    };
+  }
+
+  private validateStep1(): WizardStepValidation {
+    const documents = this.state().documents;
+    const issues: string[] = [];
+
+    if (documents.length === 0) {
+      issues.push('Upload at least one document.');
+    }
+
+    return {
+      isComplete: issues.length === 0,
+      issues
+    };
+  }
+
+  private validateStep2(): WizardStepValidation {
+    const scope = this.state().scope;
+    const selectedCount = [scope.coolingTowers, scope.boilers, scope.pumps, scope.heatExchangers].filter(Boolean).length;
+    const issues: string[] = [];
+
+    if (selectedCount === 0) {
+      issues.push('Select at least one scope area.');
+    }
+
+    return {
+      isComplete: issues.length === 0,
+      issues
+    };
+  }
+
+  private validateStep3(): WizardStepValidation {
+    const eligibility = this.state().eligibility;
+    const assessment = this.computeAssessment();
+    const issues: string[] = [];
+
+    if (!eligibility.representedManufacturer.trim()) {
+      issues.push('Represented manufacturer is required.');
+    }
+    if (!eligibility.approvedManufacturersRaw.trim()) {
+      issues.push('Approved manufacturer list is required.');
+    }
+    if (assessment.hasConflict) {
+      issues.push('Resolve manufacturer conflict before final decision.');
+    }
+
+    return {
+      isComplete: issues.length === 0,
+      issues
+    };
   }
 
   private inferDocumentType(fileName: string): DocumentType {

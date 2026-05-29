@@ -32,12 +32,15 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         <article
           class="step-chip"
           *ngFor="let step of steps"
-          [ngClass]="{ active: currentStep() === step.id }"
+          [ngClass]="{ active: currentStep() === step.id, complete: isStepComplete(step.id), incomplete: !isStepComplete(step.id) }"
           (click)="service.setCurrentStep(step.id)">
           <div class="step-index">{{ step.id + 1 }}</div>
           <div>
             <strong>{{ step.title }}</strong>
             <p>{{ step.subtitle }}</p>
+            <span class="step-chip-status" [ngClass]="{ complete: isStepComplete(step.id), incomplete: !isStepComplete(step.id) }">
+              {{ isStepComplete(step.id) ? 'Complete' : 'Needs input' }}
+            </span>
           </div>
         </article>
       </section>
@@ -178,8 +181,11 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
 
       <footer class="panel nav-panel">
         <button type="button" class="ghost" (click)="goPrevious()" [disabled]="currentStep() === 0">Back</button>
-        <div class="step-status">Step {{ currentStep() + 1 }} of {{ steps.length }} (Slice A)</div>
-        <button type="button" (click)="goNext()" [disabled]="currentStep() === steps.length - 1">Next</button>
+        <div class="step-status">
+          <div>Step {{ currentStep() + 1 }} of {{ steps.length }} (Slice A)</div>
+          <div class="step-warning" *ngIf="currentStepIssues().length > 0">{{ currentStepIssues()[0] }}</div>
+        </div>
+        <button type="button" (click)="goNext()" [disabled]="currentStep() === steps.length - 1 || !canAdvanceFromCurrentStep()">Next</button>
       </footer>
 
       <div class="help-backdrop" *ngIf="helpDrawerOpen()" (click)="closeHelpDrawer()"></div>
@@ -322,6 +328,16 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       background: #eef7ff;
     }
 
+    .step-chip.complete {
+      border-color: #7cc39b;
+      background: #f2fbf6;
+    }
+
+    .step-chip.incomplete {
+      border-color: #e3c3bd;
+      background: #fff8f6;
+    }
+
     .step-index {
       width: 20px;
       height: 20px;
@@ -343,6 +359,28 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
     .step-chip p {
       font-size: 0.76rem;
       color: #5d768f;
+    }
+
+    .step-chip-status {
+      margin-top: 0.2rem;
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+
+    .step-chip-status.complete {
+      color: #1f6e44;
+      background: #ddf3e7;
+      border-color: #b3ddc8;
+    }
+
+    .step-chip-status.incomplete {
+      color: #8d4332;
+      background: #fbe4df;
+      border-color: #f0bfb4;
     }
 
     .form-grid {
@@ -482,6 +520,14 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       color: #4f6882;
       font-size: 0.83rem;
       font-weight: 600;
+      display: grid;
+      gap: 0.2rem;
+    }
+
+    .step-warning {
+      color: #8d4332;
+      font-size: 0.78rem;
+      font-weight: 500;
     }
 
     button {
@@ -608,6 +654,7 @@ export class ProposalsNewWizardComponent {
   readonly state = computed(() => this.service.state());
   readonly currentStep = computed(() => this.service.currentStep());
   readonly assessment = computed(() => this.service.assessment());
+  readonly currentStepIssues = computed(() => this.service.getStepIssues(this.currentStep()));
   readonly selectedScopeSummary = computed(() => {
     const labels = this.service.selectedScopeLabels();
     return labels.length > 0 ? labels.join(', ') : 'None selected';
@@ -628,7 +675,19 @@ export class ProposalsNewWizardComponent {
   }
 
   goNext(): void {
+    if (!this.canAdvanceFromCurrentStep()) {
+      return;
+    }
+
     this.service.setCurrentStep(this.currentStep() + 1);
+  }
+
+  isStepComplete(stepId: number): boolean {
+    return this.service.isStepComplete(stepId);
+  }
+
+  canAdvanceFromCurrentStep(): boolean {
+    return this.service.canAdvanceFromCurrentStep();
   }
 
   askAiSuggestion(): void {
