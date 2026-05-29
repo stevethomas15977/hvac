@@ -50,6 +50,7 @@ jobs:
         run: |
           callback_urls='[]'
           logout_urls='[]'
+          api_allowed_origins='[]'
 
           if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
             base_url="${{ vars.PROD_FRONTEND_BASE_URL }}"
@@ -67,12 +68,14 @@ jobs:
           elif [[ "$base_url" =~ ^https:// ]]; then
             callback_urls="[\"${base_url}/callback\"]"
             logout_urls="[\"${base_url}/logout\"]"
+            api_allowed_origins="[\"${base_url}\"]"
           else
             echo "Skipping deployed redirect URL because Cognito Hosted UI requires HTTPS for non-localhost URLs: $base_url"
           fi
 
           echo "COGNITO_ADDITIONAL_CALLBACK_URLS=${callback_urls}" >> "$GITHUB_ENV"
           echo "COGNITO_ADDITIONAL_LOGOUT_URLS=${logout_urls}" >> "$GITHUB_ENV"
+          echo "PROPOSAL_API_ALLOWED_ORIGINS=${api_allowed_origins}" >> "$GITHUB_ENV"
 
       - name: Terraform command
         working-directory: terraform
@@ -80,15 +83,18 @@ jobs:
           if [ "${{ github.event.inputs.command }}" == "plan" ]; then
             terraform plan \
               -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
-              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}"
+              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}" \
+              -var "proposal_api_allowed_origins=${PROPOSAL_API_ALLOWED_ORIGINS}"
           fi
           if [ "${{ github.event.inputs.command }}" == "apply" ]; then
             terraform apply -auto-approve \
               -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
-              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}"
+              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}" \
+              -var "proposal_api_allowed_origins=${PROPOSAL_API_ALLOWED_ORIGINS}"
           fi
           if [ "${{ github.event.inputs.command }}" == "destroy" ]; then
             terraform destroy -auto-approve \
               -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
-              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}"
+              -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}" \
+              -var "proposal_api_allowed_origins=${PROPOSAL_API_ALLOWED_ORIGINS}"
           fi

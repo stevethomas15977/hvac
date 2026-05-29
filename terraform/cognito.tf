@@ -50,10 +50,10 @@ resource "aws_cognito_user_pool" "user_pool" {
 
   # Tenant admin flag exposed as custom:tenant_admin in JWT claims.
   schema {
-    name = "tenant_admin"
+    name                = "tenant_admin"
     attribute_data_type = "Boolean"
-    mutable = true
-    required = false
+    mutable             = true
+    required            = false
   }
 }
 
