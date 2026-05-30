@@ -53,3 +53,33 @@ output "proposal_submission_lambda_name" {
   description = "Lambda function name for proposal wizard submissions"
   value       = aws_lambda_function.proposal_submission.function_name
 }
+
+output "frontend_bucket_name" {
+  description = "S3 bucket name for the Angular frontend static site"
+  value       = aws_s3_bucket.frontend.bucket
+}
+
+output "frontend_bucket_website_endpoint" {
+  description = "S3 website endpoint for the Angular frontend bucket"
+  value       = aws_s3_bucket_website_configuration.frontend.website_endpoint
+}
+
+output "frontend_bucket_website_domain" {
+  description = "S3 website domain for the Angular frontend bucket"
+  value       = aws_s3_bucket_website_configuration.frontend.website_domain
+}
+
+output "frontend_cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for the Angular frontend"
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "frontend_cloudfront_domain_name" {
+  description = "CloudFront domain name for the Angular frontend"
+  value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "frontend_cloudfront_distribution_url" {
+  description = "HTTPS URL for the Angular frontend CloudFront distribution"
+  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+}

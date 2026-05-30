@@ -51,11 +51,14 @@ jobs:
           callback_urls='[]'
           logout_urls='[]'
           api_allowed_origins='[]'
+          frontend_bucket_name=''
 
           if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
             base_url="${{ vars.PROD_FRONTEND_BASE_URL }}"
+            frontend_bucket_name="${{ vars.PROD_S3_BUCKET_FRONTEND }}"
           else
             base_url="${{ vars.DEV_FRONTEND_BASE_URL }}"
+            frontend_bucket_name="${{ vars.DEV_S3_BUCKET_FRONTEND }}"
             if [[ -z "$base_url" ]]; then
               base_url="https://hvac-dev.softwarelikeyou.com"
             fi
@@ -76,24 +79,36 @@ jobs:
           echo "COGNITO_ADDITIONAL_CALLBACK_URLS=${callback_urls}" >> "$GITHUB_ENV"
           echo "COGNITO_ADDITIONAL_LOGOUT_URLS=${logout_urls}" >> "$GITHUB_ENV"
           echo "PROPOSAL_API_ALLOWED_ORIGINS=${api_allowed_origins}" >> "$GITHUB_ENV"
+          echo "FRONTEND_BUCKET_NAME=${frontend_bucket_name}" >> "$GITHUB_ENV"
 
       - name: Terraform command
         working-directory: terraform
         run: |
+          tf_var_file="environments/${{ github.event.inputs.environment }}/hvac.tfvars"
+
           if [ "${{ github.event.inputs.command }}" == "plan" ]; then
             terraform plan \
+              -var-file="${tf_var_file}" \
+              -var "deployment_environment=${{ github.event.inputs.environment }}" \
+              -var "frontend_bucket_name=${FRONTEND_BUCKET_NAME}" \
               -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
               -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}" \
               -var "proposal_api_allowed_origins=${PROPOSAL_API_ALLOWED_ORIGINS}"
           fi
           if [ "${{ github.event.inputs.command }}" == "apply" ]; then
             terraform apply -auto-approve \
+              -var-file="${tf_var_file}" \
+              -var "deployment_environment=${{ github.event.inputs.environment }}" \
+              -var "frontend_bucket_name=${FRONTEND_BUCKET_NAME}" \
               -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
               -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}" \
               -var "proposal_api_allowed_origins=${PROPOSAL_API_ALLOWED_ORIGINS}"
           fi
           if [ "${{ github.event.inputs.command }}" == "destroy" ]; then
             terraform destroy -auto-approve \
+              -var-file="${tf_var_file}" \
+              -var "deployment_environment=${{ github.event.inputs.environment }}" \
+              -var "frontend_bucket_name=${FRONTEND_BUCKET_NAME}" \
               -var "cognito_additional_callback_urls=${COGNITO_ADDITIONAL_CALLBACK_URLS}" \
               -var "cognito_additional_logout_urls=${COGNITO_ADDITIONAL_LOGOUT_URLS}" \
               -var "proposal_api_allowed_origins=${PROPOSAL_API_ALLOWED_ORIGINS}"
