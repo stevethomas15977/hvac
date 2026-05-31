@@ -1,0 +1,465 @@
+openapi: 3.1.0
+info:
+  title: HVAC Proposal Workflow API
+  version: v1
+  description: |
+    Development contract for triage, qualification, and selection workflow endpoints.
+    Authenticated via Cognito JWT.
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com
+    variables:
+      apiId:
+        default: 9v15p259h4
+      region:
+        default: us-east-1
+security:
+  - bearerAuth: []
+paths:
+  /api/proposals/workflow/opportunities/{opportunityId}/triage/run:
+    post:
+      operationId: runTriage
+      summary: Run triage scoring for an opportunity
+      parameters:
+        - $ref: '#/components/parameters/OpportunityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriageRunRequest'
+      responses:
+        '200':
+          description: Triage result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriageRunResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/proposals/workflow/opportunities/{opportunityId}/triage/decision:
+    post:
+      operationId: submitTriageDecision
+      summary: Submit triage decision
+      parameters:
+        - $ref: '#/components/parameters/OpportunityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriageDecisionRequest'
+      responses:
+        '200':
+          description: Triage decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageDecisionResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/proposals/workflow/opportunities/{opportunityId}/qualification/run:
+    post:
+      operationId: runQualification
+      summary: Run qualification/BOD checks
+      parameters:
+        - $ref: '#/components/parameters/OpportunityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualificationRunRequest'
+      responses:
+        '200':
+          description: Qualification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualificationRunResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/proposals/workflow/opportunities/{opportunityId}/qualification/decision:
+    post:
+      operationId: submitQualificationDecision
+      summary: Submit qualification decision
+      parameters:
+        - $ref: '#/components/parameters/OpportunityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualificationDecisionRequest'
+      responses:
+        '200':
+          description: Qualification decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageDecisionResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/proposals/workflow/opportunities/{opportunityId}/selection/compare:
+    post:
+      operationId: compareSelection
+      summary: Compare tool-path and manufacturer-path selections
+      parameters:
+        - $ref: '#/components/parameters/OpportunityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionCompareRequest'
+      responses:
+        '200':
+          description: Selection comparison result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionCompareResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/proposals/workflow/opportunities/{opportunityId}/selection/decision:
+    post:
+      operationId: submitSelectionDecision
+      summary: Submit selection decision
+      parameters:
+        - $ref: '#/components/parameters/OpportunityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionDecisionRequest'
+      responses:
+        '200':
+          description: Selection decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageDecisionResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    OpportunityId:
+      name: opportunityId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    ErrorResponse:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [bad_request, unauthorized, forbidden, not_found, conflict, validation_failed, internal_error]
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+            requestId:
+              type: string
+
+    Citation:
+      type: object
+      required: [claimId, sourceDocumentId, pageNumber, snippet, confidence]
+      properties:
+        claimId: { type: string }
+        sourceDocumentId: { type: string }
+        pageNumber: { type: integer }
+        snippet: { type: string }
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    PolicyCheck:
+      type: object
+      required: [code, status, message]
+      properties:
+        code: { type: string }
+        status:
+          type: string
+          enum: [pass, fail, warning]
+        message: { type: string }
+
+    DecisionRequestBase:
+      type: object
+      required: [decision, rationale]
+      properties:
+        decision: { type: string }
+        rationale:
+          type: string
+          minLength: 1
+
+    StageDecisionResponse:
+      type: object
+      required: [opportunityId, stage, decision, rationale, decidedBy, decidedAtIso]
+      properties:
+        opportunityId: { type: string }
+        stage:
+          type: string
+          enum: [triage, qualification, selection]
+        decision: { type: string }
+        rationale: { type: string }
+        decidedBy: { type: string }
+        decidedAtIso: { type: string, format: date-time }
+
+    TriageRunRequest:
+      type: object
+      required: [documentBundleId, representedManufacturer]
+      properties:
+        documentBundleId: { type: string }
+        representedManufacturer: { type: string }
+        approvedManufacturers:
+          type: array
+          items: { type: string }
+        bidDueDateIso:
+          type: string
+          format: date-time
+        bodFitScoreHint:
+          type: number
+          minimum: 0
+          maximum: 1
+        isIncumbentProject: { type: boolean }
+        isStrategicCustomer: { type: boolean }
+
+    TriageRunResponse:
+      type: object
+      required: [opportunityId, triage]
+      properties:
+        opportunityId: { type: string }
+        triage:
+          type: object
+          required:
+            - recommendation
+            - winProbability
+            - bodFitScore
+            - dueDateRisk
+            - manufacturerFit
+            - confidence
+            - reasonCodes
+            - blockers
+            - generatedAtIso
+          properties:
+            recommendation:
+              type: string
+              enum: [pursue, pass, needs_review]
+            winProbability:
+              type: number
+              minimum: 0
+              maximum: 1
+            bodFitScore:
+              type: number
+              minimum: 0
+              maximum: 1
+            dueDateRisk:
+              type: string
+              enum: [low, medium, high, unknown]
+            manufacturerFit:
+              type: string
+              enum: [fit, partial, conflict, unknown]
+            confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+            reasonCodes:
+              type: array
+              items: { type: string }
+            blockers:
+              type: array
+              items: { type: string }
+            generatedAtIso:
+              type: string
+              format: date-time
+            generatedBy:
+              type: string
+
+    TriageDecisionRequest:
+      allOf:
+        - $ref: '#/components/schemas/DecisionRequestBase'
+        - type: object
+          properties:
+            decision:
+              type: string
+              enum: [pursue, pass, needs_review]
+
+    QualificationRunRequest:
+      type: object
+      required: [documentBundleId, representedManufacturer, approvedManufacturers]
+      properties:
+        documentBundleId: { type: string }
+        representedManufacturer: { type: string }
+        approvedManufacturers:
+          type: array
+          items: { type: string }
+        requiresCitations: { type: boolean }
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+
+    QualificationRunResponse:
+      type: object
+      required: [opportunityId, qualification]
+      properties:
+        opportunityId: { type: string }
+        qualification:
+          type: object
+          required:
+            - recommendation
+            - confidence
+            - representedManufacturer
+            - detectedManufacturers
+            - overlapStatus
+            - policyChecks
+            - citations
+            - reasonCodes
+            - blockers
+            - generatedAtIso
+          properties:
+            recommendation:
+              type: string
+              enum: [go, no_go, needs_review]
+            confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+            representedManufacturer: { type: string }
+            detectedManufacturers:
+              type: array
+              items: { type: string }
+            overlapStatus:
+              type: string
+              enum: [eligible, conflict, unknown]
+            policyChecks:
+              type: array
+              items:
+                $ref: '#/components/schemas/PolicyCheck'
+            citations:
+              type: array
+              items:
+                $ref: '#/components/schemas/Citation'
+            reasonCodes:
+              type: array
+              items: { type: string }
+            blockers:
+              type: array
+              items: { type: string }
+            generatedAtIso:
+              type: string
+              format: date-time
+
+    QualificationDecisionRequest:
+      allOf:
+        - $ref: '#/components/schemas/DecisionRequestBase'
+        - type: object
+          properties:
+            decision:
+              type: string
+              enum: [go, no_go, needs_review]
+
+    SelectionDelta:
+      type: object
+      required: [field, toolPathValue, manufacturerValue, severity, rationale, citations]
+      properties:
+        field: { type: string }
+        toolPathValue: { type: string }
+        manufacturerValue: { type: string }
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        rationale: { type: string }
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+
+    SelectionCompareRequest:
+      type: object
+      required: [manufacturerPathModel]
+      properties:
+        toolPathModel: { type: string }
+        recommendedToolPathModel: { type: string }
+        manufacturerPathModel: { type: string }
+        notes: { type: string }
+        deltas:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectionDelta'
+
+    SelectionCompareResponse:
+      type: object
+      required: [opportunityId, selection]
+      properties:
+        opportunityId: { type: string }
+        selection:
+          type: object
+          required:
+            - toolPathModel
+            - manufacturerPathModel
+            - overallStatus
+            - confidence
+            - deltas
+            - reasonCodes
+            - blockers
+            - generatedAtIso
+          properties:
+            toolPathModel: { type: string }
+            manufacturerPathModel: { type: string }
+            overallStatus:
+              type: string
+              enum: [aligned, mismatch, needs_review]
+            confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+            deltas:
+              type: array
+              items:
+                $ref: '#/components/schemas/SelectionDelta'
+            reasonCodes:
+              type: array
+              items: { type: string }
+            blockers:
+              type: array
+              items: { type: string }
+            generatedAtIso:
+              type: string
+              format: date-time
+
+    SelectionDecisionRequest:
+      allOf:
+        - $ref: '#/components/schemas/DecisionRequestBase'
+        - type: object
+          properties:
+            decision:
+              type: string
+              enum: [approve, reject, needs_review]
