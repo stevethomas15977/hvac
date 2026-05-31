@@ -1215,6 +1215,15 @@ async function handleWorkflowRoute(event, route) {
     return handleQualificationDecision(route.opportunityId, body, event);
   }
 
+  // Step 4: selection is implemented with persistence.
+  if (route.stage === 'selection' && route.action === 'compare') {
+    return handleSelectionCompare(route.opportunityId, body, event);
+  }
+
+  if (route.stage === 'selection' && route.action === 'decision') {
+    return handleSelectionDecision(route.opportunityId, body, event);
+  }
+
   if (!workflowStubMode) {
     return errorResponse(404, 'not_found', 'Workflow route is not supported.');
   }
