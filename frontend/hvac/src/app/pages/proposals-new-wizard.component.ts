@@ -19,7 +19,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       <header class="wizard-header panel">
         <div>
           <h1>New Proposal Wizard</h1>
-          <p>Slice A: Opportunity Source, Document Intake, Scope Detection, and Manufacturer Eligibility.</p>
+          <p>Opportunity Source, Document Intake, Scope Detection, and Manufacturer Eligibility.</p>
           <p class="inline-message" *ngIf="service.restoredFromDraft()">Draft restored from browser autosave.</p>
         </div>
         <div class="header-actions">
@@ -85,6 +85,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             <label>
               Bid Due Date
               <input type="date" [ngModel]="state().source.bidDueDate" (ngModelChange)="service.updateSourceField('bidDueDate', $event)" />
+              <small class="field-error" *ngIf="showFieldError(0, 'bid due date')">Bid due date is required.</small>
             </label>
             <label>
               Contractor
@@ -97,7 +98,6 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
             </label>
             <label>
               Bid Visibility
-              <small class="field-error" *ngIf="showFieldError(0, 'bid due date')">Bid due date is required.</small>
               <select [ngModel]="state().source.bidVisibility" (ngModelChange)="service.updateSourceField('bidVisibility', $event)">
                 <option value="unknown">Unknown</option>
                 <option value="open_bid">Open Bid</option>
@@ -186,7 +186,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       <section class="panel workflow-panel">
         <div class="workflow-head">
           <div>
-            <h2>Sprint 1 Workflow Insights</h2>
+            <h2>Workflow Insights</h2>
             <p class="muted">Bid triage and BOD qualification are now pulled from the workflow backend as draft inputs change.</p>
           </div>
           <button type="button" class="ghost" (click)="refreshWorkflowInsights()">Refresh Insights</button>
@@ -328,7 +328,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       </section>
 
       <section class="panel packet-panel">
-        <h2>Decision Packet (Slice B)</h2>
+        <h2>Decision Packet</h2>
         <p class="muted">Explainable evidence summary and reason codes for final recommendation.</p>
 
         <article class="packet-card selection-workbench-card">
@@ -574,7 +574,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       <footer class="panel nav-panel">
         <button type="button" class="ghost" (click)="goPrevious()" [disabled]="currentStep() === 0">Back</button>
         <div class="step-status">
-          <div>Step {{ currentStep() + 1 }} of {{ steps.length }} (Slice A)</div>
+          <div>Step {{ currentStep() + 1 }} of {{ steps.length }}</div>
           <div class="step-warning" *ngIf="currentStepIssues().length > 0">{{ currentStepIssues()[0] }}</div>
         </div>
         <button type="button" (click)="goNext()" [disabled]="currentStep() === steps.length - 1 || !canAdvanceFromCurrentStep()">Next</button>

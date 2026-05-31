@@ -753,7 +753,7 @@ export class ProposalWizardService {
       missingEvidence.push('Division 23 specifications are missing.');
     }
     if (!docs.some((item) => item.type === 'addendum')) {
-      missingEvidence.push('No addenda uploaded. Validate whether addenda were issued.');
+      missingEvidence.push('No bid updates (addenda) uploaded. Confirm whether any were issued.');
     }
 
     const representedManufacturer = current.eligibility.representedManufacturer.trim();
