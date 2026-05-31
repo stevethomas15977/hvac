@@ -876,53 +876,292 @@ async function handleQualificationDecision(opportunityId, body, event) {
   });
 }
 
-function handleSelectionCompareStub(opportunityId, body) {
-  if (!body || typeof body !== 'object') {
-    return errorResponse(400, 'validation_failed', 'Request body is required.');
+function normalizeSelectionDeltas(deltas) {
+  if (!Array.isArray(deltas)) {
+    return [];
   }
 
-  if (typeof body.toolPathModel !== 'string' || !body.toolPathModel.trim()) {
-    return errorResponse(400, 'validation_failed', 'toolPathModel is required.');
+  return deltas
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const field = typeof item.field === 'string' ? item.field.trim() : '';
+      const toolPathValue = typeof item.toolPathValue === 'string'
+        ? item.toolPathValue.trim()
+        : item.toolPathValue === undefined || item.toolPathValue === null
+          ? ''
+          : String(item.toolPathValue);
+      const manufacturerValue = typeof item.manufacturerValue === 'string'
+        ? item.manufacturerValue.trim()
+        : item.manufacturerValue === undefined || item.manufacturerValue === null
+          ? ''
+          : String(item.manufacturerValue);
+      const severity = ['info', 'warning', 'critical'].includes(item.severity) ? item.severity : 'warning';
+      const rationale = typeof item.rationale === 'string' && item.rationale.trim()
+        ? item.rationale.trim()
+        : `${field || 'attribute'} differs between tool-path and manufacturer-path values.`;
+      const citations = normalizeCitations(item.citations);
+
+      return {
+        field,
+        toolPathValue,
+        manufacturerValue,
+        severity,
+        rationale,
+        citations
+      };
+    })
+    .filter((item) => item.field && item.toolPathValue && item.manufacturerValue && item.toolPathValue !== item.manufacturerValue);
+}
+
+function validateSelectionComparePayload(body) {
+  if (!body || typeof body !== 'object') {
+    return 'Request body is required.';
+  }
+
+  const rawToolPathModel =
+    (typeof body.toolPathModel === 'string' && body.toolPathModel.trim())
+      ? body.toolPathModel.trim()
+      : ((typeof body.recommendedToolPathModel === 'string' && body.recommendedToolPathModel.trim())
+        ? body.recommendedToolPathModel.trim()
+        : '');
+
+  if (!rawToolPathModel) {
+    return 'toolPathModel or recommendedToolPathModel is required.';
   }
 
   if (typeof body.manufacturerPathModel !== 'string' || !body.manufacturerPathModel.trim()) {
-    return errorResponse(400, 'validation_failed', 'manufacturerPathModel is required.');
+    return 'manufacturerPathModel is required.';
   }
 
-  const toolPathModel = body.toolPathModel.trim();
+  if (body.deltas !== undefined && !Array.isArray(body.deltas)) {
+    return 'deltas must be an array when provided.';
+  }
+
+  return null;
+}
+
+function buildSelectionEvaluation(body) {
+  const toolPathModel =
+    (typeof body.toolPathModel === 'string' && body.toolPathModel.trim())
+      ? body.toolPathModel.trim()
+      : body.recommendedToolPathModel.trim();
   const manufacturerPathModel = body.manufacturerPathModel.trim();
-  const aligned = toolPathModel.toLowerCase() === manufacturerPathModel.toLowerCase();
+  const modelAligned = toolPathModel.toLowerCase() === manufacturerPathModel.toLowerCase();
+  const normalizedDeltas = normalizeSelectionDeltas(body.deltas);
+  const deltas = [...normalizedDeltas];
+
+  if (!modelAligned) {
+    deltas.unshift({
+      field: 'model',
+      toolPathValue: toolPathModel,
+      manufacturerValue: manufacturerPathModel,
+      severity: 'critical',
+      rationale: 'Manufacturer path model differs from tool-path recommendation.',
+      citations: []
+    });
+  }
+
+  const hasCritical = deltas.some((item) => item.severity === 'critical');
+  const overallStatus = deltas.length === 0
+    ? 'aligned'
+    : (hasCritical ? 'needs_review' : 'mismatch');
+  const reasonCodes = deltas.length === 0 ? ['MODEL_ALIGNED'] : ['MODEL_MISMATCH'];
+  const blockers = hasCritical
+    ? ['Critical model mismatch requires reviewer approval before final selection.']
+    : [];
+  const confidenceBase = deltas.length === 0 ? 0.86 : (hasCritical ? 0.57 : 0.66);
+  const confidence = clamp(Number.parseFloat(confidenceBase.toFixed(2)), 0.45, 0.95);
+
+  return {
+    toolPathModel,
+    manufacturerPathModel,
+    overallStatus,
+    confidence,
+    deltas,
+    reasonCodes,
+    blockers,
+    generatedAtIso: isoNow(),
+    generatedBy: 'selection-engine-v1'
+  };
+}
+
+async function persistSelectionCompare(event, opportunityId, body, selection) {
+  const tenantId = resolveTenantId(event);
+  const username = resolveSubmittedBy(event, {});
+  const generatedAtIso = selection.generatedAtIso;
+  const opportunityKey = `OPPORTUNITY#${opportunityId}`;
+
+  const stageItem = {
+    tenant_key: `TENANT#${tenantId}`,
+    submission_key: `${opportunityKey}#STAGE#selection#TS#${generatedAtIso}`,
+    entityType: 'workflow_stage_output',
+    tenantId,
+    opportunityId,
+    stage: 'selection',
+    opportunity_key: opportunityKey,
+    stage_updated_at: `selection#${generatedAtIso}`,
+    request: {
+      toolPathModel: selection.toolPathModel,
+      manufacturerPathModel: selection.manufacturerPathModel,
+      notes: typeof body.notes === 'string' ? body.notes.trim() : ''
+    },
+    selection,
+    updatedAtIso: generatedAtIso,
+    createdBy: username
+  };
+
+  await client.send(new PutCommand({
+    TableName: tableName,
+    Item: stageItem,
+    ConditionExpression: 'attribute_not_exists(tenant_key) AND attribute_not_exists(submission_key)'
+  }));
+
+  await client.send(new UpdateCommand({
+    TableName: tableName,
+    Key: {
+      tenant_key: `TENANT#${tenantId}`,
+      submission_key: opportunityKey
+    },
+    UpdateExpression: 'SET entityType = :entityType, tenantId = :tenantId, opportunityId = :opportunityId, opportunity_key = :opportunityKey, stage = :stage, stage_updated_at = :stageUpdatedAt, latestSelection = :latestSelection, updatedAtIso = :updatedAtIso',
+    ExpressionAttributeValues: {
+      ':entityType': 'workflow_summary',
+      ':tenantId': tenantId,
+      ':opportunityId': opportunityId,
+      ':opportunityKey': opportunityKey,
+      ':stage': 'selection',
+      ':stageUpdatedAt': `selection#${generatedAtIso}`,
+      ':latestSelection': selection,
+      ':updatedAtIso': generatedAtIso
+    }
+  }));
+
+  return {
+    tenantId,
+    username
+  };
+}
+
+async function persistSelectionDecision(event, opportunityId, body) {
+  const tenantId = resolveTenantId(event);
+  const decidedBy = resolveSubmittedBy(event, {});
+  const decidedAtIso = isoNow();
+  const opportunityKey = `OPPORTUNITY#${opportunityId}`;
+
+  const decisionItem = {
+    tenant_key: `TENANT#${tenantId}`,
+    submission_key: `${opportunityKey}#DECISION#selection#TS#${decidedAtIso}`,
+    entityType: 'workflow_stage_decision',
+    tenantId,
+    opportunityId,
+    stage: 'selection',
+    decision: body.decision,
+    rationale: body.rationale.trim(),
+    decidedBy,
+    decidedAtIso,
+    updatedAtIso: decidedAtIso
+  };
+
+  await client.send(new PutCommand({
+    TableName: tableName,
+    Item: decisionItem,
+    ConditionExpression: 'attribute_not_exists(tenant_key) AND attribute_not_exists(submission_key)'
+  }));
+
+  await client.send(new UpdateCommand({
+    TableName: tableName,
+    Key: {
+      tenant_key: `TENANT#${tenantId}`,
+      submission_key: opportunityKey
+    },
+    UpdateExpression: 'SET latestSelectionDecision = :decisionObj, updatedAtIso = :updatedAtIso',
+    ExpressionAttributeValues: {
+      ':decisionObj': {
+        decision: body.decision,
+        rationale: body.rationale.trim(),
+        decidedBy,
+        decidedAtIso
+      },
+      ':updatedAtIso': decidedAtIso
+    }
+  }));
+
+  return {
+    tenantId,
+    decidedBy,
+    decidedAtIso
+  };
+}
+
+async function handleSelectionCompare(opportunityId, body, event) {
+  const validationError = validateSelectionComparePayload(body);
+  if (validationError) {
+    return errorResponse(400, 'validation_failed', validationError);
+  }
+
+  const selection = buildSelectionEvaluation(body);
+
+  try {
+    const { tenantId, username } = await persistSelectionCompare(event, opportunityId, body, selection);
+    console.log(JSON.stringify({
+      event: 'workflow_selection_compare_stored',
+      tenantId,
+      opportunityId,
+      overallStatus: selection.overallStatus,
+      confidence: selection.confidence,
+      deltaCount: selection.deltas.length,
+      username
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'workflow_selection_compare_store_failed',
+      tenantId: resolveTenantId(event),
+      opportunityId,
+      username: resolveSubmittedBy(event, {}),
+      error: toStructuredError(error)
+    }));
+    return errorResponse(500, 'internal_error', 'Unable to store selection comparison.');
+  }
 
   return response(200, {
     opportunityId,
     selection: {
-      toolPathModel,
-      manufacturerPathModel,
-      overallStatus: aligned ? 'aligned' : 'mismatch',
-      confidence: aligned ? 0.83 : 0.61,
-      deltas: aligned
-        ? []
-        : [
-            {
-              field: 'model',
-              toolPathValue: toolPathModel,
-              manufacturerValue: manufacturerPathModel,
-              severity: 'warning',
-              rationale: 'Manufacturer path model differs from tool-path recommendation.',
-              citations: []
-            }
-          ],
-      reasonCodes: aligned ? ['MODEL_ALIGNED'] : ['MODEL_MISMATCH'],
-      blockers: aligned ? [] : ['Tool-path and manufacturer-path models do not match.'],
-      generatedAtIso: isoNow()
+      toolPathModel: selection.toolPathModel,
+      manufacturerPathModel: selection.manufacturerPathModel,
+      overallStatus: selection.overallStatus,
+      confidence: selection.confidence,
+      deltas: selection.deltas,
+      reasonCodes: selection.reasonCodes,
+      blockers: selection.blockers,
+      generatedAtIso: selection.generatedAtIso
     }
   });
 }
 
-function handleSelectionDecisionStub(opportunityId, body, event) {
+async function handleSelectionDecision(opportunityId, body, event) {
   const validationError = validateDecisionPayload(body, ['approve', 'reject', 'needs_review']);
   if (validationError) {
     return errorResponse(400, 'validation_failed', validationError);
+  }
+
+  let decisionMeta;
+  try {
+    decisionMeta = await persistSelectionDecision(event, opportunityId, body);
+    console.log(JSON.stringify({
+      event: 'workflow_selection_decision_stored',
+      tenantId: decisionMeta.tenantId,
+      opportunityId,
+      decision: body.decision,
+      username: decisionMeta.decidedBy
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'workflow_selection_decision_store_failed',
+      tenantId: resolveTenantId(event),
+      opportunityId,
+      username: resolveSubmittedBy(event, {}),
+      error: toStructuredError(error)
+    }));
+    return errorResponse(500, 'internal_error', 'Unable to store selection decision.');
   }
 
   return response(200, {
@@ -930,8 +1169,8 @@ function handleSelectionDecisionStub(opportunityId, body, event) {
     stage: 'selection',
     decision: body.decision,
     rationale: body.rationale.trim(),
-    decidedBy: resolveSubmittedBy(event, {}),
-    decidedAtIso: isoNow()
+    decidedBy: decisionMeta.decidedBy,
+    decidedAtIso: decisionMeta.decidedAtIso
   });
 }
 
@@ -942,11 +1181,11 @@ function handleWorkflowStubRoute(event, route) {
   }
 
   if (route.stage === 'selection' && route.action === 'compare') {
-    return handleSelectionCompareStub(route.opportunityId, body);
+    return handleSelectionCompare(route.opportunityId, body, event);
   }
 
   if (route.stage === 'selection' && route.action === 'decision') {
-    return handleSelectionDecisionStub(route.opportunityId, body, event);
+    return handleSelectionDecision(route.opportunityId, body, event);
   }
 
   return errorResponse(404, 'not_found', 'Workflow route is not supported.');
@@ -977,7 +1216,7 @@ async function handleWorkflowRoute(event, route) {
   }
 
   if (!workflowStubMode) {
-    return errorResponse(501, 'not_implemented', 'Workflow route is not implemented yet.');
+    return errorResponse(404, 'not_found', 'Workflow route is not supported.');
   }
 
   return handleWorkflowStubRoute(event, route);
