@@ -48,6 +48,26 @@ resource "aws_dynamodb_table" "proposal_submissions" {
     type = "S"
   }
 
+  attribute {
+    name = "opportunity_key"
+    type = "S"
+  }
+
+  attribute {
+    name = "stage_updated_at"
+    type = "S"
+  }
+
+  attribute {
+    name = "triage_queue_key"
+    type = "S"
+  }
+
+  attribute {
+    name = "triage_priority_sort"
+    type = "S"
+  }
+
   global_secondary_index {
     name            = "review_queue"
     hash_key        = "review_queue_key"
@@ -59,6 +79,20 @@ resource "aws_dynamodb_table" "proposal_submissions" {
     name            = "submitted_by"
     hash_key        = "submitted_by_key"
     range_key       = "submitted_by_sort_key"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "opportunity_stage_latest"
+    hash_key        = "opportunity_key"
+    range_key       = "stage_updated_at"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "triage_priority_queue"
+    hash_key        = "triage_queue_key"
+    range_key       = "triage_priority_sort"
     projection_type = "ALL"
   }
 

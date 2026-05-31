@@ -6,6 +6,8 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const tableName = process.env.PROPOSAL_SUBMISSIONS_TABLE;
 const defaultTenantId = process.env.PROPOSAL_DEFAULT_TENANT_ID || 'development';
 
+const workflowStubMode = (process.env.PROPOSAL_WORKFLOW_STUB_MODE || 'false').toLowerCase() === 'true';
+
 function response(statusCode, body) {
   return {
     statusCode,
@@ -14,6 +16,17 @@ function response(statusCode, body) {
     },
     body: JSON.stringify(body)
   };
+}
+
+function errorResponse(statusCode, code, message, details = undefined, requestId = undefined) {
+  return response(statusCode, {
+    error: {
+      code,
+      message,
+      ...(details ? { details } : {}),
+      ...(requestId ? { requestId } : {})
+    }
+  });
 }
 
 function normalizeRecommendation(payload) {
@@ -104,6 +117,259 @@ function parseLimit(event) {
   }
 
   return Math.max(1, Math.min(parsed, 25));
+}
+
+function parseRequestBody(event) {
+  if (!event.body) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(event.body);
+  } catch {
+    return null;
+  }
+}
+
+function parseWorkflowRoute(method, path) {
+  if (method !== 'POST') {
+    return null;
+  }
+
+  const match = path.match(/^\/api\/proposals\/workflow\/opportunities\/([^/]+)\/(triage|qualification|selection)\/(run|decision|compare)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    opportunityId: decodeURIComponent(match[1]),
+    stage: match[2],
+    action: match[3]
+  };
+}
+
+function isoNow() {
+  return new Date().toISOString();
+}
+
+function validateDecisionPayload(body, allowedDecisions) {
+  if (!body || typeof body !== 'object') {
+    return 'Request body is required.';
+  }
+
+  if (!allowedDecisions.includes(body.decision)) {
+    return `decision must be one of: ${allowedDecisions.join(', ')}.`;
+  }
+
+  if (typeof body.rationale !== 'string' || !body.rationale.trim()) {
+    return 'rationale is required and cannot be empty.';
+  }
+
+  return null;
+}
+
+function handleTriageRunStub(opportunityId, body) {
+  if (!body || typeof body !== 'object') {
+    return errorResponse(400, 'validation_failed', 'Request body is required.');
+  }
+
+  if (typeof body.documentBundleId !== 'string' || !body.documentBundleId.trim()) {
+    return errorResponse(400, 'validation_failed', 'documentBundleId is required.');
+  }
+
+  if (typeof body.representedManufacturer !== 'string' || !body.representedManufacturer.trim()) {
+    return errorResponse(400, 'validation_failed', 'representedManufacturer is required.');
+  }
+
+  return response(200, {
+    opportunityId,
+    triage: {
+      recommendation: 'needs_review',
+      winProbability: 0.62,
+      bodFitScore: 0.58,
+      dueDateRisk: 'medium',
+      manufacturerFit: 'partial',
+      confidence: 0.64,
+      reasonCodes: ['BOD_PARTIAL_MATCH', 'DUE_DATE_NEAR'],
+      blockers: [],
+      generatedAtIso: isoNow(),
+      generatedBy: 'system'
+    }
+  });
+}
+
+function handleTriageDecisionStub(opportunityId, body, event) {
+  const validationError = validateDecisionPayload(body, ['pursue', 'pass', 'needs_review']);
+  if (validationError) {
+    return errorResponse(400, 'validation_failed', validationError);
+  }
+
+  return response(200, {
+    opportunityId,
+    stage: 'triage',
+    decision: body.decision,
+    rationale: body.rationale.trim(),
+    decidedBy: resolveSubmittedBy(event, {}),
+    decidedAtIso: isoNow()
+  });
+}
+
+function handleQualificationRunStub(opportunityId, body) {
+  if (!body || typeof body !== 'object') {
+    return errorResponse(400, 'validation_failed', 'Request body is required.');
+  }
+
+  if (typeof body.documentBundleId !== 'string' || !body.documentBundleId.trim()) {
+    return errorResponse(400, 'validation_failed', 'documentBundleId is required.');
+  }
+
+  if (typeof body.representedManufacturer !== 'string' || !body.representedManufacturer.trim()) {
+    return errorResponse(400, 'validation_failed', 'representedManufacturer is required.');
+  }
+
+  if (!Array.isArray(body.approvedManufacturers)) {
+    return errorResponse(400, 'validation_failed', 'approvedManufacturers must be an array.');
+  }
+
+  const represented = body.representedManufacturer.trim();
+  const approved = body.approvedManufacturers
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  const hasOverlap = approved.some((item) => item.toLowerCase() === represented.toLowerCase());
+
+  return response(200, {
+    opportunityId,
+    qualification: {
+      recommendation: hasOverlap ? 'go' : 'needs_review',
+      confidence: hasOverlap ? 0.79 : 0.56,
+      representedManufacturer: represented,
+      detectedManufacturers: approved,
+      overlapStatus: hasOverlap ? 'eligible' : 'conflict',
+      policyChecks: [
+        {
+          code: 'MANUFACTURER_OVERLAP',
+          status: hasOverlap ? 'pass' : 'fail',
+          message: hasOverlap
+            ? 'Represented manufacturer is present in approved manufacturer list.'
+            : 'Represented manufacturer is not present in approved manufacturer list.'
+        }
+      ],
+      citations: [],
+      reasonCodes: hasOverlap ? ['MANUFACTURER_MATCH'] : ['MANUFACTURER_CONFLICT'],
+      blockers: hasOverlap ? [] : ['Represented manufacturer missing from approved list.'],
+      generatedAtIso: isoNow()
+    }
+  });
+}
+
+function handleQualificationDecisionStub(opportunityId, body, event) {
+  const validationError = validateDecisionPayload(body, ['go', 'no_go', 'needs_review']);
+  if (validationError) {
+    return errorResponse(400, 'validation_failed', validationError);
+  }
+
+  return response(200, {
+    opportunityId,
+    stage: 'qualification',
+    decision: body.decision,
+    rationale: body.rationale.trim(),
+    decidedBy: resolveSubmittedBy(event, {}),
+    decidedAtIso: isoNow()
+  });
+}
+
+function handleSelectionCompareStub(opportunityId, body) {
+  if (!body || typeof body !== 'object') {
+    return errorResponse(400, 'validation_failed', 'Request body is required.');
+  }
+
+  if (typeof body.toolPathModel !== 'string' || !body.toolPathModel.trim()) {
+    return errorResponse(400, 'validation_failed', 'toolPathModel is required.');
+  }
+
+  if (typeof body.manufacturerPathModel !== 'string' || !body.manufacturerPathModel.trim()) {
+    return errorResponse(400, 'validation_failed', 'manufacturerPathModel is required.');
+  }
+
+  const toolPathModel = body.toolPathModel.trim();
+  const manufacturerPathModel = body.manufacturerPathModel.trim();
+  const aligned = toolPathModel.toLowerCase() === manufacturerPathModel.toLowerCase();
+
+  return response(200, {
+    opportunityId,
+    selection: {
+      toolPathModel,
+      manufacturerPathModel,
+      overallStatus: aligned ? 'aligned' : 'mismatch',
+      confidence: aligned ? 0.83 : 0.61,
+      deltas: aligned
+        ? []
+        : [
+            {
+              field: 'model',
+              toolPathValue: toolPathModel,
+              manufacturerValue: manufacturerPathModel,
+              severity: 'warning',
+              rationale: 'Manufacturer path model differs from tool-path recommendation.',
+              citations: []
+            }
+          ],
+      reasonCodes: aligned ? ['MODEL_ALIGNED'] : ['MODEL_MISMATCH'],
+      blockers: aligned ? [] : ['Tool-path and manufacturer-path models do not match.'],
+      generatedAtIso: isoNow()
+    }
+  });
+}
+
+function handleSelectionDecisionStub(opportunityId, body, event) {
+  const validationError = validateDecisionPayload(body, ['approve', 'reject', 'needs_review']);
+  if (validationError) {
+    return errorResponse(400, 'validation_failed', validationError);
+  }
+
+  return response(200, {
+    opportunityId,
+    stage: 'selection',
+    decision: body.decision,
+    rationale: body.rationale.trim(),
+    decidedBy: resolveSubmittedBy(event, {}),
+    decidedAtIso: isoNow()
+  });
+}
+
+function handleWorkflowStubRoute(event, route) {
+  const body = parseRequestBody(event);
+  if (body === null) {
+    return errorResponse(400, 'bad_request', 'Request body must be valid JSON.');
+  }
+
+  if (route.stage === 'triage' && route.action === 'run') {
+    return handleTriageRunStub(route.opportunityId, body);
+  }
+
+  if (route.stage === 'triage' && route.action === 'decision') {
+    return handleTriageDecisionStub(route.opportunityId, body, event);
+  }
+
+  if (route.stage === 'qualification' && route.action === 'run') {
+    return handleQualificationRunStub(route.opportunityId, body);
+  }
+
+  if (route.stage === 'qualification' && route.action === 'decision') {
+    return handleQualificationDecisionStub(route.opportunityId, body, event);
+  }
+
+  if (route.stage === 'selection' && route.action === 'compare') {
+    return handleSelectionCompareStub(route.opportunityId, body);
+  }
+
+  if (route.stage === 'selection' && route.action === 'decision') {
+    return handleSelectionDecisionStub(route.opportunityId, body, event);
+  }
+
+  return errorResponse(404, 'not_found', 'Workflow route is not supported.');
 }
 
 async function handleSubmit(event, payload) {
@@ -208,6 +474,15 @@ export const handler = async (event) => {
 
   const method = event.requestContext?.http?.method || '';
   const path = event.requestContext?.http?.path || event.rawPath || '';
+
+  const workflowRoute = parseWorkflowRoute(method, path);
+  if (workflowRoute) {
+    if (!workflowStubMode) {
+      return errorResponse(501, 'not_implemented', 'Workflow route is not implemented yet.');
+    }
+
+    return handleWorkflowStubRoute(event, workflowRoute);
+  }
 
   if (method === 'GET' && path.endsWith('/api/proposals/wizard/submissions/recent')) {
     try {

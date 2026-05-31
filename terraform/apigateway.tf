@@ -60,3 +60,51 @@ resource "aws_apigatewayv2_route" "proposal_submissions_recent_get" {
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
 }
+
+resource "aws_apigatewayv2_route" "proposal_workflow_triage_run" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/proposals/workflow/opportunities/{opportunityId}/triage/run"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
+
+resource "aws_apigatewayv2_route" "proposal_workflow_triage_decision" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/proposals/workflow/opportunities/{opportunityId}/triage/decision"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
+
+resource "aws_apigatewayv2_route" "proposal_workflow_qualification_run" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/proposals/workflow/opportunities/{opportunityId}/qualification/run"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
+
+resource "aws_apigatewayv2_route" "proposal_workflow_qualification_decision" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/proposals/workflow/opportunities/{opportunityId}/qualification/decision"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
+
+resource "aws_apigatewayv2_route" "proposal_workflow_selection_compare" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/proposals/workflow/opportunities/{opportunityId}/selection/compare"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
+
+resource "aws_apigatewayv2_route" "proposal_workflow_selection_decision" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/proposals/workflow/opportunities/{opportunityId}/selection/decision"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}

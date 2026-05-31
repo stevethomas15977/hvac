@@ -24,6 +24,8 @@ resource "aws_lambda_function" "proposal_submission" {
       PROPOSAL_SUBMISSIONS_TABLE          = aws_dynamodb_table.proposal_submissions.name
       PROPOSAL_DEFAULT_TENANT_ID          = "development"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      PROPOSAL_WORKFLOW_CONTRACT_VERSION  = "v1"
+      PROPOSAL_WORKFLOW_STUB_MODE         = "true"
     }
   }
 
