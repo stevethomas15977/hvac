@@ -31,7 +31,8 @@ resource "aws_iam_role_policy" "proposal_submission_lambda_dynamodb" {
         Action = [
           "dynamodb:PutItem",
           "dynamodb:GetItem",
-          "dynamodb:Query"
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
         ]
         Resource = [
           aws_dynamodb_table.proposal_submissions.arn,
