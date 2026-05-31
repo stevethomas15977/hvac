@@ -1,5 +1,10 @@
 deployment_environment = "development"
-dev_s3_bucket_frontend = "hvac-proposal-submittal-development"
+dev_s3_bucket_frontend = "hvac-proposal-submittal"
 frontend_bucket_versioning_enabled = false
-cloudfront_aliases = []
-cloudfront_acm_certificate_arn = ""
+cloudfront_aliases = ["hvac-dev.softwarelikeyou.com"]
+cloudfront_acm_certificate_arn = "arn:aws:acm:us-east-1:499181527793:certificate/18ad229e-fe0f-436b-9120-88c264cedfd1"
+cloudfront_price_class = "PriceClass_All"
+cloudfront_web_acl_arn = "arn:aws:wafv2:us-east-1:499181527793:global/webacl/CreatedByCloudFront-7777cc08/527c1f30-2bc2-457c-8703-be09b4018ef8"
+proposal_api_allowed_origins = ["https://hvac-dev.softwarelikeyou.com"]
+cognito_additional_callback_urls = ["https://hvac-dev.softwarelikeyou.com/callback"]
+cognito_additional_logout_urls = ["https://hvac-dev.softwarelikeyou.com/logout"]

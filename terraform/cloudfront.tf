@@ -25,6 +25,12 @@ variable "cloudfront_acm_certificate_arn" {
   default     = ""
 }
 
+variable "cloudfront_web_acl_arn" {
+  description = "Optional WAFv2 web ACL ARN to associate with the CloudFront distribution."
+  type        = string
+  default     = ""
+}
+
 data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
 }
@@ -37,6 +43,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   price_class         = var.cloudfront_price_class
   wait_for_deployment = false
   aliases             = var.cloudfront_aliases
+  web_acl_id          = var.cloudfront_web_acl_arn != "" ? var.cloudfront_web_acl_arn : null
 
   origin {
     domain_name = aws_s3_bucket_website_configuration.frontend.website_endpoint
