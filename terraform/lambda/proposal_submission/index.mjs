@@ -545,60 +545,325 @@ async function handleTriageDecision(opportunityId, body, event) {
   });
 }
 
-function handleQualificationRunStub(opportunityId, body) {
+function normalizeManufacturers(manufacturers) {
+  if (!Array.isArray(manufacturers)) {
+    return [];
+  }
+
+  return manufacturers
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item, index, array) => item.length > 0 && array.indexOf(item) === index);
+}
+
+function normalizeCitations(citations) {
+  if (!Array.isArray(citations)) {
+    return [];
+  }
+
+  return citations
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      claimId: typeof item.claimId === 'string' ? item.claimId.trim() : '',
+      sourceDocumentId: typeof item.sourceDocumentId === 'string' ? item.sourceDocumentId.trim() : '',
+      pageNumber: Number.isInteger(item.pageNumber) ? item.pageNumber : null,
+      snippet: typeof item.snippet === 'string' ? item.snippet.trim() : '',
+      confidence: typeof item.confidence === 'number' && !Number.isNaN(item.confidence)
+        ? clamp(item.confidence, 0, 1)
+        : null
+    }))
+    .filter((item) => item.claimId && item.sourceDocumentId && item.pageNumber !== null && item.snippet && item.confidence !== null);
+}
+
+function validateQualificationRunPayload(body) {
   if (!body || typeof body !== 'object') {
-    return errorResponse(400, 'validation_failed', 'Request body is required.');
+    return 'Request body is required.';
   }
 
   if (typeof body.documentBundleId !== 'string' || !body.documentBundleId.trim()) {
-    return errorResponse(400, 'validation_failed', 'documentBundleId is required.');
+    return 'documentBundleId is required.';
   }
 
   if (typeof body.representedManufacturer !== 'string' || !body.representedManufacturer.trim()) {
-    return errorResponse(400, 'validation_failed', 'representedManufacturer is required.');
+    return 'representedManufacturer is required.';
   }
 
   if (!Array.isArray(body.approvedManufacturers)) {
-    return errorResponse(400, 'validation_failed', 'approvedManufacturers must be an array.');
+    return 'approvedManufacturers must be an array.';
   }
 
-  const represented = body.representedManufacturer.trim();
-  const approved = body.approvedManufacturers
-    .filter((item) => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
+  if (body.requiresCitations !== undefined && typeof body.requiresCitations !== 'boolean') {
+    return 'requiresCitations must be a boolean when provided.';
+  }
 
-  const hasOverlap = approved.some((item) => item.toLowerCase() === represented.toLowerCase());
+  if (body.citations !== undefined && !Array.isArray(body.citations)) {
+    return 'citations must be an array when provided.';
+  }
+
+  return null;
+}
+
+function buildQualificationEvaluation(body) {
+  const representedManufacturer = body.representedManufacturer.trim();
+  const detectedManufacturers = normalizeManufacturers(body.approvedManufacturers);
+  const normalizedCitations = normalizeCitations(body.citations);
+  const requiresCitations = body.requiresCitations === true;
+
+  const representedLower = representedManufacturer.toLowerCase();
+  const hasOverlap = detectedManufacturers.some((item) => item.toLowerCase() === representedLower);
+  const overlapStatus = detectedManufacturers.length === 0 ? 'unknown' : (hasOverlap ? 'eligible' : 'conflict');
+
+  const policyChecks = [
+    {
+      code: 'MANUFACTURER_OVERLAP',
+      status: hasOverlap ? 'pass' : 'fail',
+      message: hasOverlap
+        ? 'Represented manufacturer is present in approved manufacturer list.'
+        : 'Represented manufacturer is not present in approved manufacturer list.'
+    }
+  ];
+
+  const reasonCodes = [];
+  const blockers = [];
+
+  if (hasOverlap) {
+    reasonCodes.push('MANUFACTURER_MATCH');
+  } else {
+    reasonCodes.push('MANUFACTURER_CONFLICT');
+    blockers.push('Represented manufacturer missing from approved manufacturer list.');
+  }
+
+  if (requiresCitations) {
+    if (normalizedCitations.length > 0) {
+      policyChecks.push({
+        code: 'CITATION_COVERAGE',
+        status: 'pass',
+        message: 'Required citations are present.'
+      });
+      reasonCodes.push('CITATION_COVERAGE_OK');
+    } else {
+      policyChecks.push({
+        code: 'CITATION_COVERAGE',
+        status: 'fail',
+        message: 'Citations are required but were not provided.'
+      });
+      reasonCodes.push('CITATION_GAP');
+      blockers.push('Required citations are missing.');
+    }
+  } else if (normalizedCitations.length > 0) {
+    policyChecks.push({
+      code: 'CITATION_COVERAGE',
+      status: 'warning',
+      message: 'Citations provided and accepted as advisory evidence.'
+    });
+  }
+
+  const baseConfidence = hasOverlap ? 0.78 : 0.52;
+  const citationBoost = normalizedCitations.length > 0 ? 0.08 : 0;
+  const confidence = clamp(Number.parseFloat((baseConfidence + citationBoost).toFixed(2)), 0.45, 0.95);
+
+  let recommendation = 'needs_review';
+  if (!hasOverlap) {
+    recommendation = 'no_go';
+  } else if (!requiresCitations || normalizedCitations.length > 0) {
+    recommendation = 'go';
+  }
+
+  return {
+    recommendation,
+    confidence,
+    representedManufacturer,
+    detectedManufacturers,
+    overlapStatus,
+    policyChecks,
+    citations: normalizedCitations,
+    reasonCodes,
+    blockers,
+    generatedAtIso: isoNow(),
+    generatedBy: 'qualification-engine-v1'
+  };
+}
+
+async function persistQualificationRun(event, opportunityId, body, qualification) {
+  const tenantId = resolveTenantId(event);
+  const username = resolveSubmittedBy(event, {});
+  const generatedAtIso = qualification.generatedAtIso;
+  const opportunityKey = `OPPORTUNITY#${opportunityId}`;
+
+  const stageItem = {
+    tenant_key: `TENANT#${tenantId}`,
+    submission_key: `${opportunityKey}#STAGE#qualification#TS#${generatedAtIso}`,
+    entityType: 'workflow_stage_output',
+    tenantId,
+    opportunityId,
+    stage: 'qualification',
+    opportunity_key: opportunityKey,
+    stage_updated_at: `qualification#${generatedAtIso}`,
+    request: {
+      documentBundleId: body.documentBundleId,
+      representedManufacturer: body.representedManufacturer,
+      approvedManufacturers: normalizeManufacturers(body.approvedManufacturers),
+      requiresCitations: body.requiresCitations === true
+    },
+    qualification,
+    updatedAtIso: generatedAtIso,
+    createdBy: username
+  };
+
+  await client.send(new PutCommand({
+    TableName: tableName,
+    Item: stageItem,
+    ConditionExpression: 'attribute_not_exists(tenant_key) AND attribute_not_exists(submission_key)'
+  }));
+
+  await client.send(new UpdateCommand({
+    TableName: tableName,
+    Key: {
+      tenant_key: `TENANT#${tenantId}`,
+      submission_key: opportunityKey
+    },
+    UpdateExpression: 'SET entityType = :entityType, tenantId = :tenantId, opportunityId = :opportunityId, opportunity_key = :opportunityKey, stage = :stage, stage_updated_at = :stageUpdatedAt, latestQualification = :latestQualification, updatedAtIso = :updatedAtIso',
+    ExpressionAttributeValues: {
+      ':entityType': 'workflow_summary',
+      ':tenantId': tenantId,
+      ':opportunityId': opportunityId,
+      ':opportunityKey': opportunityKey,
+      ':stage': 'qualification',
+      ':stageUpdatedAt': `qualification#${generatedAtIso}`,
+      ':latestQualification': qualification,
+      ':updatedAtIso': generatedAtIso
+    }
+  }));
+
+  return {
+    tenantId,
+    username
+  };
+}
+
+async function persistQualificationDecision(event, opportunityId, body) {
+  const tenantId = resolveTenantId(event);
+  const decidedBy = resolveSubmittedBy(event, {});
+  const decidedAtIso = isoNow();
+  const opportunityKey = `OPPORTUNITY#${opportunityId}`;
+
+  const decisionItem = {
+    tenant_key: `TENANT#${tenantId}`,
+    submission_key: `${opportunityKey}#DECISION#qualification#TS#${decidedAtIso}`,
+    entityType: 'workflow_stage_decision',
+    tenantId,
+    opportunityId,
+    stage: 'qualification',
+    decision: body.decision,
+    rationale: body.rationale.trim(),
+    decidedBy,
+    decidedAtIso,
+    updatedAtIso: decidedAtIso
+  };
+
+  await client.send(new PutCommand({
+    TableName: tableName,
+    Item: decisionItem,
+    ConditionExpression: 'attribute_not_exists(tenant_key) AND attribute_not_exists(submission_key)'
+  }));
+
+  await client.send(new UpdateCommand({
+    TableName: tableName,
+    Key: {
+      tenant_key: `TENANT#${tenantId}`,
+      submission_key: opportunityKey
+    },
+    UpdateExpression: 'SET latestQualificationDecision = :decisionObj, updatedAtIso = :updatedAtIso',
+    ExpressionAttributeValues: {
+      ':decisionObj': {
+        decision: body.decision,
+        rationale: body.rationale.trim(),
+        decidedBy,
+        decidedAtIso
+      },
+      ':updatedAtIso': decidedAtIso
+    }
+  }));
+
+  return {
+    tenantId,
+    decidedBy,
+    decidedAtIso
+  };
+}
+
+async function handleQualificationRun(opportunityId, body, event) {
+  const validationError = validateQualificationRunPayload(body);
+  if (validationError) {
+    return errorResponse(400, 'validation_failed', validationError);
+  }
+
+  const qualification = buildQualificationEvaluation(body);
+
+  try {
+    const { tenantId, username } = await persistQualificationRun(event, opportunityId, body, qualification);
+    console.log(JSON.stringify({
+      event: 'workflow_qualification_run_stored',
+      tenantId,
+      opportunityId,
+      recommendation: qualification.recommendation,
+      confidence: qualification.confidence,
+      blockerCount: qualification.blockers.length,
+      username
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'workflow_qualification_run_store_failed',
+      tenantId: resolveTenantId(event),
+      opportunityId,
+      username: resolveSubmittedBy(event, {}),
+      error: toStructuredError(error)
+    }));
+    return errorResponse(500, 'internal_error', 'Unable to store qualification result.');
+  }
 
   return response(200, {
     opportunityId,
     qualification: {
-      recommendation: hasOverlap ? 'go' : 'needs_review',
-      confidence: hasOverlap ? 0.79 : 0.56,
-      representedManufacturer: represented,
-      detectedManufacturers: approved,
-      overlapStatus: hasOverlap ? 'eligible' : 'conflict',
-      policyChecks: [
-        {
-          code: 'MANUFACTURER_OVERLAP',
-          status: hasOverlap ? 'pass' : 'fail',
-          message: hasOverlap
-            ? 'Represented manufacturer is present in approved manufacturer list.'
-            : 'Represented manufacturer is not present in approved manufacturer list.'
-        }
-      ],
-      citations: [],
-      reasonCodes: hasOverlap ? ['MANUFACTURER_MATCH'] : ['MANUFACTURER_CONFLICT'],
-      blockers: hasOverlap ? [] : ['Represented manufacturer missing from approved list.'],
-      generatedAtIso: isoNow()
+      recommendation: qualification.recommendation,
+      confidence: qualification.confidence,
+      representedManufacturer: qualification.representedManufacturer,
+      detectedManufacturers: qualification.detectedManufacturers,
+      overlapStatus: qualification.overlapStatus,
+      policyChecks: qualification.policyChecks,
+      citations: qualification.citations,
+      reasonCodes: qualification.reasonCodes,
+      blockers: qualification.blockers,
+      generatedAtIso: qualification.generatedAtIso
     }
   });
 }
 
-function handleQualificationDecisionStub(opportunityId, body, event) {
+async function handleQualificationDecision(opportunityId, body, event) {
   const validationError = validateDecisionPayload(body, ['go', 'no_go', 'needs_review']);
   if (validationError) {
     return errorResponse(400, 'validation_failed', validationError);
+  }
+
+  let decisionMeta;
+  try {
+    decisionMeta = await persistQualificationDecision(event, opportunityId, body);
+    console.log(JSON.stringify({
+      event: 'workflow_qualification_decision_stored',
+      tenantId: decisionMeta.tenantId,
+      opportunityId,
+      decision: body.decision,
+      username: decisionMeta.decidedBy
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'workflow_qualification_decision_store_failed',
+      tenantId: resolveTenantId(event),
+      opportunityId,
+      username: resolveSubmittedBy(event, {}),
+      error: toStructuredError(error)
+    }));
+    return errorResponse(500, 'internal_error', 'Unable to store qualification decision.');
   }
 
   return response(200, {
@@ -606,8 +871,8 @@ function handleQualificationDecisionStub(opportunityId, body, event) {
     stage: 'qualification',
     decision: body.decision,
     rationale: body.rationale.trim(),
-    decidedBy: resolveSubmittedBy(event, {}),
-    decidedAtIso: isoNow()
+    decidedBy: decisionMeta.decidedBy,
+    decidedAtIso: decisionMeta.decidedAtIso
   });
 }
 
@@ -676,22 +941,6 @@ function handleWorkflowStubRoute(event, route) {
     return errorResponse(400, 'bad_request', 'Request body must be valid JSON.');
   }
 
-  if (route.stage === 'triage' && route.action === 'run') {
-    return handleTriageRunStub(route.opportunityId, body);
-  }
-
-  if (route.stage === 'triage' && route.action === 'decision') {
-    return handleTriageDecisionStub(route.opportunityId, body, event);
-  }
-
-  if (route.stage === 'qualification' && route.action === 'run') {
-    return handleQualificationRunStub(route.opportunityId, body);
-  }
-
-  if (route.stage === 'qualification' && route.action === 'decision') {
-    return handleQualificationDecisionStub(route.opportunityId, body, event);
-  }
-
   if (route.stage === 'selection' && route.action === 'compare') {
     return handleSelectionCompareStub(route.opportunityId, body);
   }
@@ -709,13 +958,22 @@ async function handleWorkflowRoute(event, route) {
     return errorResponse(400, 'bad_request', 'Request body must be valid JSON.');
   }
 
-  // Step 2: triage is implemented with persistence even when other stages remain stubbed.
+  // Step 2: triage is implemented with persistence.
   if (route.stage === 'triage' && route.action === 'run') {
     return handleTriageRun(route.opportunityId, body, event);
   }
 
   if (route.stage === 'triage' && route.action === 'decision') {
     return handleTriageDecision(route.opportunityId, body, event);
+  }
+
+  // Step 3: qualification is implemented with persistence.
+  if (route.stage === 'qualification' && route.action === 'run') {
+    return handleQualificationRun(route.opportunityId, body, event);
+  }
+
+  if (route.stage === 'qualification' && route.action === 'decision') {
+    return handleQualificationDecision(route.opportunityId, body, event);
   }
 
   if (!workflowStubMode) {
