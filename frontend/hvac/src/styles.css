@@ -1,1 +1,59 @@
 /* You can add global styles to this file, and also import other style files */
+
+app-proposals-new-wizard .selection-workbench-card {
+	gap: 0.7rem;
+}
+
+app-proposals-new-wizard .selection-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem;
+}
+
+app-proposals-new-wizard .selection-grid label {
+	display: grid;
+	gap: 0.3rem;
+	color: #3d5a75;
+	font-size: 0.82rem;
+}
+
+app-proposals-new-wizard .delta-list {
+	display: grid;
+	gap: 0.55rem;
+}
+
+app-proposals-new-wizard .delta-card {
+	border: 1px solid #dbe6f0;
+	border-radius: 10px;
+	background: #fbfdff;
+	padding: 0.65rem;
+	display: grid;
+	gap: 0.35rem;
+}
+
+app-proposals-new-wizard .delta-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+app-proposals-new-wizard .delta-values {
+	display: grid;
+	gap: 0.2rem;
+	color: #38546f;
+	font-size: 0.8rem;
+}
+
+app-proposals-new-wizard .timeline-line {
+	color: #4f6174;
+	font-size: 0.8rem;
+	margin: 0;
+}
+
+@media (max-width: 1000px) {
+	app-proposals-new-wizard .selection-grid {
+		grid-template-columns: 1fr;
+	}
+}

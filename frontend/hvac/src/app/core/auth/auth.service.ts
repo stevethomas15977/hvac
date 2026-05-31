@@ -1,5 +1,4 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { fetchAuthSession, getCurrentUser, signInWithRedirect, signOut } from 'aws-amplify/auth';
 import { RuntimeConfigService } from '../config/runtime-config.service';
 import { buildCognitoConfig, isCognitoConfigured } from './cognito.config';
 
@@ -50,6 +49,7 @@ export class AuthService {
     this.isLoading.set(true);
 
     try {
+      const { signInWithRedirect } = await import('aws-amplify/auth');
       await signInWithRedirect();
     } catch (error) {
       this.errorMessage.set(this.toErrorMessage(error));
@@ -70,6 +70,7 @@ export class AuthService {
     this.isLoading.set(true);
 
     try {
+      const { signOut } = await import('aws-amplify/auth');
       await signOut();
       this.currentUsername.set(null);
       this.isTenantAdmin.set(false);
@@ -87,6 +88,7 @@ export class AuthService {
       return true;
     }
 
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
     const tenantAdmin = this.toBooleanClaimValue(session.tokens?.idToken?.payload['custom:tenant_admin']);
     this.isTenantAdmin.set(tenantAdmin);
@@ -94,6 +96,7 @@ export class AuthService {
   }
 
   async getUserGroups(): Promise<string[]> {
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
     const groups = session.tokens?.idToken?.payload['cognito:groups'];
 
@@ -115,6 +118,7 @@ export class AuthService {
 
   private async refreshCurrentUser(): Promise<void> {
     try {
+      const { getCurrentUser } = await import('aws-amplify/auth');
       const user = await getCurrentUser();
       this.currentUsername.set(user.username);
       await this.hasTenantAdminAccess();

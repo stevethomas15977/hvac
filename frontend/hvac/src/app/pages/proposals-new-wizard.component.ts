@@ -170,17 +170,136 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
           </div>
 
           <section class="policy-box" [ngClass]="{ blocked: !assessment().canProceedToDecision }">
-            <h3>Decision Policy Status (Slice A Preview)</h3>
-            <p *ngIf="assessment().canProceedToDecision">Evidence and eligibility checks currently pass. Final Go/No Go remains in Slice B.</p>
+            <h3>Input Readiness</h3>
+            <p *ngIf="assessment().canProceedToDecision">Required evidence, manufacturer alignment, and qualification workflow checks currently pass.</p>
             <ul *ngIf="assessment().missingEvidence.length > 0">
               <li *ngFor="let issue of assessment().missingEvidence">{{ issue }}</li>
             </ul>
             <p class="error" *ngIf="assessment().hasConflict">
               Conflict: {{ assessment().representedManufacturer }} is not present in approved manufacturer list.
             </p>
-            <p class="muted">Hard rule: Missing/conflicting evidence forces Needs Review and blocks final Go/No Go.</p>
+            <p class="muted">Hard rule: missing or conflicting evidence keeps the workflow in Needs Review until triage and qualification converge.</p>
           </section>
         </ng-container>
+      </section>
+
+      <section class="panel workflow-panel">
+        <div class="workflow-head">
+          <div>
+            <h2>Sprint 1 Workflow Insights</h2>
+            <p class="muted">Bid triage and BOD qualification are now pulled from the workflow backend as draft inputs change.</p>
+          </div>
+          <button type="button" class="ghost" (click)="refreshWorkflowInsights()">Refresh Insights</button>
+        </div>
+
+        <div class="workflow-grid">
+          <article class="workflow-card" [ngClass]="{ loading: triagePanel().loading }">
+            <div class="workflow-card-head">
+              <div>
+                <h3>Bid Triage Scorecard</h3>
+                <p class="muted">Win probability, BOD fit, and manufacturer alignment from the triage engine.</p>
+              </div>
+              <span class="decision-badge" [ngClass]="triagePanel().data?.recommendation ?? 'needs_review'">
+                {{ humanizeToken(triagePanel().data?.recommendation ?? 'needs_review') }}
+              </span>
+            </div>
+
+            <p class="muted" *ngIf="triagePanel().loading">Refreshing triage scorecard...</p>
+            <p class="error-text" *ngIf="triagePanel().error">{{ triagePanel().error }}</p>
+
+            <ng-container *ngIf="triagePanel().data as triage; else triageEmpty">
+              <div class="metric-grid">
+                <div class="metric-card">
+                  <span class="metric-label">Win Probability</span>
+                  <strong>{{ formatPercent(triage.winProbability) }}</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label">BOD Fit</span>
+                  <strong>{{ formatPercent(triage.bodFitScore) }}</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label">Confidence</span>
+                  <strong>{{ formatPercent(triage.confidence) }}</strong>
+                </div>
+              </div>
+
+              <div class="workflow-meta">
+                <span class="reason-code">Due Date: {{ humanizeToken(triage.dueDateRisk) }}</span>
+                <span class="reason-code">Manufacturer: {{ humanizeToken(triage.manufacturerFit) }}</span>
+                <span class="reason-code" *ngIf="triage.generatedBy">Source: {{ triage.generatedBy }}</span>
+              </div>
+
+              <div class="code-row" *ngIf="triage.reasonCodes.length > 0">
+                <span class="reason-code" *ngFor="let code of triage.reasonCodes">{{ code }}</span>
+              </div>
+
+              <ul *ngIf="triage.blockers.length > 0" class="workflow-list blockers">
+                <li *ngFor="let blocker of triage.blockers">{{ blocker }}</li>
+              </ul>
+            </ng-container>
+
+            <ng-template #triageEmpty>
+              <p class="empty-state">Complete source metadata, upload at least one document, and set represented manufacturer to generate the scorecard.</p>
+            </ng-template>
+          </article>
+
+          <article class="workflow-card" [ngClass]="{ loading: qualificationPanel().loading }">
+            <div class="workflow-card-head">
+              <div>
+                <h3>BOD Qualification Panel</h3>
+                <p class="muted">Manufacturer overlap, policy checks, citations, and confidence from qualification.</p>
+              </div>
+              <span class="decision-badge" [ngClass]="qualificationBadgeClass()">
+                {{ humanizeToken(qualificationPanel().data?.recommendation ?? 'needs_review') }}
+              </span>
+            </div>
+
+            <p class="muted" *ngIf="qualificationPanel().loading">Refreshing qualification panel...</p>
+            <p class="error-text" *ngIf="qualificationPanel().error">{{ qualificationPanel().error }}</p>
+
+            <ng-container *ngIf="qualificationPanel().data as qualification; else qualificationEmpty">
+              <div class="metric-grid">
+                <div class="metric-card">
+                  <span class="metric-label">Confidence</span>
+                  <strong>{{ formatPercent(qualification.confidence) }}</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label">Overlap</span>
+                  <strong>{{ humanizeToken(qualification.overlapStatus) }}</strong>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-label">Detected Manufacturers</span>
+                  <strong>{{ qualification.detectedManufacturers.length }}</strong>
+                </div>
+              </div>
+
+              <div class="code-row" *ngIf="qualification.reasonCodes.length > 0">
+                <span class="reason-code" *ngFor="let code of qualification.reasonCodes">{{ code }}</span>
+              </div>
+
+              <ul class="workflow-list policy-check-list" *ngIf="qualification.policyChecks.length > 0">
+                <li *ngFor="let check of qualification.policyChecks">
+                  <span class="status-chip" [ngClass]="check.status">{{ check.status.toUpperCase() }}</span>
+                  {{ check.code }}: {{ check.message }}
+                </li>
+              </ul>
+
+              <ul class="workflow-list" *ngIf="qualification.citations.length > 0">
+                <li *ngFor="let citation of qualification.citations">
+                  {{ citation.sourceDocumentId }} p.{{ citation.pageNumber }}: {{ citation.snippet }}
+                </li>
+              </ul>
+
+              <ul *ngIf="qualification.blockers.length > 0" class="workflow-list blockers">
+                <li *ngFor="let blocker of qualification.blockers">{{ blocker }}</li>
+              </ul>
+            </ng-container>
+
+            <ng-template #qualificationEmpty>
+              <p class="empty-state">Add the approved manufacturer list to populate policy checks and BOD qualification guidance.</p>
+            </ng-template>
+          </article>
+        </div>
       </section>
 
       <section class="panel ai-panel">
@@ -212,6 +331,97 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         <h2>Decision Packet (Slice B)</h2>
         <p class="muted">Explainable evidence summary and reason codes for final recommendation.</p>
 
+        <article class="packet-card selection-workbench-card">
+          <div class="workflow-card-head">
+            <div>
+              <h3>Selection Workbench</h3>
+              <p class="muted">Compare tool-path and manufacturer-path model choices before final approval.</p>
+            </div>
+            <span class="decision-badge" [ngClass]="selectionBadgeClass()">
+              {{ humanizeToken(selectionPanel().data?.overallStatus ?? 'needs_review') }}
+            </span>
+          </div>
+
+          <div class="selection-grid">
+            <label>
+              Tool-Path Model
+              <input
+                [ngModel]="state().selection.toolPathModel"
+                (ngModelChange)="service.updateSelectionField('toolPathModel', $event)"
+                placeholder="NC840S" />
+            </label>
+            <label>
+              Manufacturer-Path Model
+              <input
+                [ngModel]="state().selection.manufacturerPathModel"
+                (ngModelChange)="service.updateSelectionField('manufacturerPathModel', $event)"
+                placeholder="NC840S" />
+            </label>
+            <label class="full-row">
+              Comparison Notes
+              <textarea
+                [ngModel]="state().selection.comparisonNotes"
+                (ngModelChange)="service.updateSelectionField('comparisonNotes', $event)"
+                placeholder="Capture why the manufacturer path differs, substitutions, or reviewer context."></textarea>
+            </label>
+          </div>
+
+          <p class="muted" *ngIf="selectionPanel().loading">Refreshing selection workbench...</p>
+          <p class="error-text" *ngIf="selectionPanel().error">{{ selectionPanel().error }}</p>
+
+          <ng-container *ngIf="selectionPanel().data as selection; else selectionEmpty">
+            <div class="metric-grid">
+              <div class="metric-card">
+                <span class="metric-label">Overall Status</span>
+                <strong>{{ humanizeToken(selection.overallStatus) }}</strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Confidence</span>
+                <strong>{{ formatPercent(selection.confidence) }}</strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Delta Count</span>
+                <strong>{{ selection.deltas.length }}</strong>
+              </div>
+            </div>
+
+            <div class="workflow-meta">
+              <span class="reason-code">Tool Path: {{ selection.toolPathModel }}</span>
+              <span class="reason-code">Manufacturer Path: {{ selection.manufacturerPathModel }}</span>
+            </div>
+
+            <div class="code-row" *ngIf="selection.reasonCodes.length > 0">
+              <span class="reason-code" *ngFor="let code of selection.reasonCodes">{{ code }}</span>
+            </div>
+
+            <div class="delta-list" *ngIf="selection.deltas.length > 0">
+              <article class="delta-card" *ngFor="let delta of selection.deltas">
+                <div class="delta-head">
+                  <strong>{{ delta.field }}</strong>
+                  <span class="status-chip" [ngClass]="delta.severity">{{ delta.severity.toUpperCase() }}</span>
+                </div>
+                <p class="muted">{{ delta.rationale }}</p>
+                <div class="delta-values">
+                  <span>Tool Path: {{ delta.toolPathValue }}</span>
+                  <span>Manufacturer Path: {{ delta.manufacturerValue }}</span>
+                </div>
+              </article>
+            </div>
+
+            <ul *ngIf="selection.blockers.length > 0" class="workflow-list blockers">
+              <li *ngFor="let blocker of selection.blockers">{{ blocker }}</li>
+            </ul>
+
+            <p class="timeline-line" *ngIf="lastSelectionDecision() as decision">
+              Last selection decision: {{ humanizeToken(decision.decision) }} by {{ decision.decidedBy }} at {{ formatSubmittedAt(decision.decidedAtIso) }}.
+            </p>
+          </ng-container>
+
+          <ng-template #selectionEmpty>
+            <p class="empty-state">Enter both model paths after qualification is ready to generate side-by-side comparison deltas.</p>
+          </ng-template>
+        </article>
+
         <div class="packet-grid">
           <article class="packet-card">
             <h3>Evidence Summary</h3>
@@ -241,7 +451,26 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
               {{ decisionPacket().manufacturerEligibility.isEligible ? 'Eligible' : 'Needs review' }}
             </p>
           </article>
+
+          <article class="packet-card">
+            <h3>Workflow Summary</h3>
+            <p>Triage: {{ humanizeToken(decisionPacket().workflowSummary.triageRecommendation ?? 'pending') }}</p>
+            <p>Triage confidence: {{ formatPercent(decisionPacket().workflowSummary.triageConfidence) }}</p>
+            <p>Qualification: {{ humanizeToken(decisionPacket().workflowSummary.qualificationRecommendation ?? 'pending') }}</p>
+            <p>Qualification confidence: {{ formatPercent(decisionPacket().workflowSummary.qualificationConfidence) }}</p>
+            <p>Selection: {{ humanizeToken(decisionPacket().workflowSummary.selectionStatus ?? 'pending') }}</p>
+            <p>Selection confidence: {{ formatPercent(decisionPacket().workflowSummary.selectionConfidence) }}</p>
+          </article>
         </div>
+
+        <article class="packet-card" *ngIf="decisionPacket().selectionWorkbench.deltaCount > 0">
+          <h3>Selection Delta Summary</h3>
+          <ul>
+            <li *ngFor="let delta of decisionPacket().selectionWorkbench.deltas">
+              {{ delta.field }} ({{ delta.severity }}): {{ delta.toolPathValue }} vs {{ delta.manufacturerValue }}
+            </li>
+          </ul>
+        </article>
 
         <article class="packet-card">
           <h3>Reason Codes</h3>
@@ -673,6 +902,126 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       font-size: 0.83rem;
     }
 
+    .workflow-panel {
+      display: grid;
+      gap: 0.75rem;
+      border-color: #d6e1ec;
+      background: linear-gradient(180deg, #f8fbff 0%, #fdfefe 100%);
+    }
+
+    .workflow-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .workflow-card {
+      border: 1px solid #d7e3ee;
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 0.85rem;
+      display: grid;
+      gap: 0.65rem;
+      align-content: start;
+    }
+
+    .workflow-card.loading {
+      border-color: #bad0e5;
+    }
+
+    .workflow-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.55rem;
+    }
+
+    .metric-card {
+      border: 1px solid #dde7f0;
+      border-radius: 10px;
+      background: #f9fbfd;
+      padding: 0.65rem;
+      display: grid;
+      gap: 0.2rem;
+    }
+
+    .metric-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #617b96;
+    }
+
+    .workflow-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .workflow-list {
+      margin: 0;
+      padding-left: 1rem;
+      color: #4f6174;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .workflow-list.blockers {
+      color: #8a2f1f;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.1rem 0.4rem;
+      margin-right: 0.4rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      border: 1px solid transparent;
+    }
+
+    .status-chip.pass {
+      color: #1f6e44;
+      background: #ddf3e7;
+      border-color: #b3ddc8;
+    }
+
+    .status-chip.fail {
+      color: #8a2f1f;
+      background: #f9dfd8;
+      border-color: #ecb5a8;
+    }
+
+    .status-chip.warning {
+      color: #7b4a00;
+      background: #fcefd4;
+      border-color: #f3d499;
+    }
+
+    .error-text {
+      color: #a44331;
+      font-size: 0.82rem;
+    }
+
     .muted {
       color: #617b96;
       font-size: 0.8rem;
@@ -828,7 +1177,8 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       border: 1px solid transparent;
     }
 
-    .decision-badge.go {
+    .decision-badge.go,
+    .decision-badge.aligned {
       color: #1f6e44;
       background: #ddf3e7;
       border-color: #b3ddc8;
@@ -840,6 +1190,7 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
       border-color: #ecb5a8;
     }
 
+    .decision-badge.mismatch,
     .decision-badge.needs_review {
       color: #7b4a00;
       background: #fcefd4;
@@ -997,6 +1348,14 @@ type HelpTopic = 'source' | 'documents' | 'scope' | 'eligibility';
         grid-template-columns: 1fr;
       }
 
+      .workflow-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
       .details-grid {
         grid-template-columns: 1fr;
       }
@@ -1027,6 +1386,9 @@ export class ProposalsNewWizardComponent {
   readonly state = computed(() => this.service.state());
   readonly currentStep = computed(() => this.service.currentStep());
   readonly assessment = computed(() => this.service.assessment());
+  readonly triagePanel = computed(() => this.service.triagePanel());
+  readonly qualificationPanel = computed(() => this.service.qualificationPanel());
+  readonly selectionPanel = computed(() => this.service.selectionPanel());
   readonly decisionPreview = computed(() => this.service.decisionPreview());
   readonly decisionPacket = computed(() => this.service.decisionPacket());
   readonly isSubmitting = computed(() => this.service.isSubmitting());
@@ -1034,6 +1396,7 @@ export class ProposalsNewWizardComponent {
   readonly hasChangesSinceLastSubmission = computed(() => this.service.hasChangesSinceLastSubmission());
   readonly submitErrorMessage = computed(() => this.service.submitErrorMessage());
   readonly lastSubmissionReceipt = computed(() => this.service.lastSubmissionReceipt());
+  readonly lastSelectionDecision = computed(() => this.service.lastSelectionDecision());
   readonly recentSubmissions = computed(() => this.service.recentSubmissions());
   readonly shouldWarnBeforeUnload = computed(() => this.service.shouldWarnBeforeUnload());
   readonly hasStatusMessages = computed(() => {
@@ -1125,6 +1488,10 @@ export class ProposalsNewWizardComponent {
     this.service.refreshRecentSubmissions();
   }
 
+  refreshWorkflowInsights(): void {
+    this.service.refreshWorkflowInsights();
+  }
+
   showFieldError(stepId: number, fieldFragment: string): boolean {
     return this.currentStep() === stepId && this.service.hasStepIssueContaining(stepId, fieldFragment);
   }
@@ -1153,10 +1520,43 @@ export class ProposalsNewWizardComponent {
     return 'Needs Review';
   }
 
+  qualificationBadgeClass(): 'go' | 'no_go' | 'needs_review' {
+    const status = this.qualificationPanel().data?.recommendation;
+    if (status === 'go') {
+      return 'go';
+    }
+    if (status === 'no_go') {
+      return 'no_go';
+    }
+    return 'needs_review';
+  }
+
+  selectionBadgeClass(): 'aligned' | 'mismatch' | 'needs_review' {
+    return this.selectionPanel().data?.overallStatus ?? 'needs_review';
+  }
+
+  humanizeToken(value: string): string {
+    return value
+      .split('_')
+      .filter((segment) => segment.length > 0)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(' ');
+  }
+
+  formatPercent(value: number | null | undefined): string {
+    if (value === null || value === undefined) {
+      return '--';
+    }
+
+    return `${Math.round(value * 100)}%`;
+  }
+
   askAiSuggestion(): void {
     const step = this.currentStep();
     const state = this.state();
     const assessment = this.assessment();
+    const triage = this.triagePanel().data;
+    const qualification = this.qualificationPanel().data;
 
     if (step === 0) {
       this.aiSuggestion.set(
@@ -1185,9 +1585,12 @@ export class ProposalsNewWizardComponent {
     this.aiSuggestion.set(
       `Suggestion: Represented manufacturer is ${assessment.representedManufacturer || 'not set'}.\n` +
       `Approved list entries: ${assessment.approvedManufacturers.length}.\n` +
+      `Triage: ${this.humanizeToken(triage?.recommendation ?? 'needs_review')} at ${this.formatPercent(triage?.confidence)} confidence.\n` +
+      `Qualification: ${this.humanizeToken(qualification?.recommendation ?? 'needs_review')} at ${this.formatPercent(qualification?.confidence)} confidence.\n` +
+      `Selection: ${this.humanizeToken(this.selectionPanel().data?.overallStatus ?? 'needs_review')} at ${this.formatPercent(this.selectionPanel().data?.confidence)} confidence.\n` +
       (assessment.hasConflict
         ? 'Conflict detected. Recommendation: Needs Review until eligibility conflict is resolved.'
-        : 'No direct eligibility conflict detected from entered values.')
+        : 'Use the workflow panels to confirm citations, policy checks, and selection deltas before setting a final recommendation.')
     );
   }
 

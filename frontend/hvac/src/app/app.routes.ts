@@ -2,21 +2,15 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/guards/auth.guard';
 import { tenantAdminGuard } from './core/auth/guards/tenant-admin.guard';
 import { AppShellComponent } from './layout/app-shell.component';
-import { AdminPageComponent } from './pages/admin-page.component';
-import { AuthCallbackComponent } from './pages/auth-callback.component';
-import { DashboardHomeComponent } from './pages/dashboard-home.component';
-import { LoggedOutComponent } from './pages/logged-out.component';
-import { ProposalsNewWizardComponent } from './pages/proposals-new-wizard.component';
-import { ProposalsPageComponent } from './pages/proposals-page.component';
 
 export const routes: Routes = [
 	{
 		path: 'callback',
-		component: AuthCallbackComponent
+		loadComponent: () => import('./pages/auth-callback.component').then((module) => module.AuthCallbackComponent)
 	},
 	{
 		path: 'logout',
-		component: LoggedOutComponent
+		loadComponent: () => import('./pages/logged-out.component').then((module) => module.LoggedOutComponent)
 	},
 	{
 		path: 'app',
@@ -25,20 +19,20 @@ export const routes: Routes = [
 		children: [
 			{
 				path: 'dashboard',
-				component: DashboardHomeComponent
+				loadComponent: () => import('./pages/dashboard-home.component').then((module) => module.DashboardHomeComponent)
 			},
 			{
 				path: 'proposals',
-				component: ProposalsPageComponent
+				loadComponent: () => import('./pages/proposals-page.component').then((module) => module.ProposalsPageComponent)
 			},
 			{
 				path: 'proposals/new',
-				component: ProposalsNewWizardComponent
+				loadComponent: () => import('./pages/proposals-new-wizard.component').then((module) => module.ProposalsNewWizardComponent)
 			},
 			{
 				path: 'admin',
 				canActivate: [tenantAdminGuard],
-				component: AdminPageComponent
+				loadComponent: () => import('./pages/admin-page.component').then((module) => module.AdminPageComponent)
 			},
 			{
 				path: '',

@@ -1,11 +1,16 @@
 import { Inject, Injectable, Injector, computed, effect, inject, signal } from '@angular/core';
-import { finalize } from 'rxjs';
+import { Observable, finalize, of, switchMap } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
 import {
   PROPOSAL_WIZARD_API,
   ProposalWizardApi,
+  ProposalWorkflowCitation,
+  ProposalWorkflowQualificationResult,
+  ProposalWorkflowSelectionResult,
+  ProposalWorkflowStageDecisionResponse,
   ProposalWizardRecentSubmission,
-  ProposalWizardSubmissionReceipt
+  ProposalWizardSubmissionReceipt,
+  ProposalWorkflowTriageResult
 } from './proposal-wizard-api';
 
 export type ProposalSourceType = 'email' | 'procore' | 'constructconnect' | 'shared_drive' | 'dropbox' | 'direct_link' | 'other';
@@ -40,6 +45,11 @@ export interface ProposalWizardState {
     representedManufacturer: string;
     approvedManufacturersRaw: string;
   };
+  selection: {
+    toolPathModel: string;
+    manufacturerPathModel: string;
+    comparisonNotes: string;
+  };
   finalDecision: {
     recommendation: ProposalRecommendationStatus | null;
     reviewNotes: string;
@@ -61,6 +71,12 @@ export interface QualificationPolicyAssessment {
   representedManufacturer: string;
   approvedManufacturers: string[];
   canProceedToDecision: boolean;
+}
+
+export interface WorkflowPanelState<T> {
+  loading: boolean;
+  error: string | null;
+  data: T | null;
 }
 
 export interface WizardStepValidation {
@@ -89,11 +105,33 @@ export interface ProposalDecisionPacket {
     approvedManufacturers: string[];
     isEligible: boolean;
   };
+  workflowSummary: {
+    triageConfidence: number | null;
+    qualificationConfidence: number | null;
+    selectionConfidence: number | null;
+    triageRecommendation: string | null;
+    qualificationRecommendation: string | null;
+    selectionStatus: string | null;
+  };
+  selectionWorkbench: {
+    toolPathModel: string;
+    manufacturerPathModel: string;
+    overallStatus: string | null;
+    confidence: number | null;
+    deltaCount: number;
+    deltas: Array<{
+      field: string;
+      severity: 'info' | 'warning' | 'critical';
+      rationale: string;
+      toolPathValue: string;
+      manufacturerValue: string;
+    }>;
+  };
   reasonCodes: string[];
   blockers: string[];
 }
 
-const DRAFT_VERSION = 1;
+const DRAFT_VERSION = 2;
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function defaultState(): ProposalWizardState {
@@ -118,6 +156,11 @@ function defaultState(): ProposalWizardState {
       representedManufacturer: 'Marley',
       approvedManufacturersRaw: ''
     },
+    selection: {
+      toolPathModel: '',
+      manufacturerPathModel: '',
+      comparisonNotes: ''
+    },
     finalDecision: {
       recommendation: null,
       reviewNotes: '',
@@ -140,6 +183,22 @@ export class ProposalWizardService {
   readonly lastSubmissionReceipt = signal<ProposalWizardSubmissionReceipt | null>(null);
   readonly lastSubmittedSnapshot = signal<string | null>(null);
   readonly recentSubmissions = signal<ProposalWizardRecentSubmission[]>([]);
+  readonly triagePanel = signal<WorkflowPanelState<ProposalWorkflowTriageResult>>({
+    loading: false,
+    error: null,
+    data: null
+  });
+  readonly qualificationPanel = signal<WorkflowPanelState<ProposalWorkflowQualificationResult>>({
+    loading: false,
+    error: null,
+    data: null
+  });
+  readonly selectionPanel = signal<WorkflowPanelState<ProposalWorkflowSelectionResult>>({
+    loading: false,
+    error: null,
+    data: null
+  });
+  readonly lastSelectionDecision = signal<ProposalWorkflowStageDecisionResponse | null>(null);
 
   readonly selectedScopeLabels = computed(() => {
     const scope = this.state().scope;
@@ -160,6 +219,11 @@ export class ProposalWizardService {
   });
 
   readonly assessment = computed<QualificationPolicyAssessment>(() => this.computeAssessment());
+  readonly workflowOpportunityId = computed(() => this.buildWorkflowOpportunityId());
+  readonly approvedManufacturers = computed(() => this.parseApprovedManufacturers(this.state().eligibility.approvedManufacturersRaw));
+  readonly triageRequestPayload = computed(() => this.buildTriageRequestPayload());
+  readonly qualificationRequestPayload = computed(() => this.buildQualificationRequestPayload());
+  readonly selectionRequestPayload = computed(() => this.buildSelectionComparePayload());
 
   readonly stepValidations = computed<Record<number, WizardStepValidation>>(() => ({
     0: this.validateStep0(),
@@ -193,6 +257,12 @@ export class ProposalWizardService {
   });
 
   private hasInitialized = false;
+  private triageRefreshHandle: number | null = null;
+  private qualificationRefreshHandle: number | null = null;
+  private selectionRefreshHandle: number | null = null;
+  private triageRequestVersion = 0;
+  private qualificationRequestVersion = 0;
+  private selectionRequestVersion = 0;
 
   constructor(@Inject(PROPOSAL_WIZARD_API) private readonly api: ProposalWizardApi) {}
 
@@ -218,6 +288,72 @@ export class ProposalWizardService {
       };
 
       window.localStorage.setItem(this.storageKey(username), JSON.stringify(payload));
+    }, { injector: this.injector });
+
+    effect(() => {
+      const opportunityId = this.workflowOpportunityId();
+      const payload = this.triageRequestPayload();
+
+      if (!opportunityId || !payload) {
+        if (this.triageRefreshHandle !== null) {
+          window.clearTimeout(this.triageRefreshHandle);
+          this.triageRefreshHandle = null;
+        }
+        this.triagePanel.set({ loading: false, error: null, data: null });
+        return;
+      }
+
+      if (this.triageRefreshHandle !== null) {
+        window.clearTimeout(this.triageRefreshHandle);
+      }
+
+      this.triageRefreshHandle = window.setTimeout(() => {
+        this.refreshTriage(opportunityId, payload);
+      }, 350);
+    }, { injector: this.injector });
+
+    effect(() => {
+      const opportunityId = this.workflowOpportunityId();
+      const payload = this.qualificationRequestPayload();
+
+      if (!opportunityId || !payload) {
+        if (this.qualificationRefreshHandle !== null) {
+          window.clearTimeout(this.qualificationRefreshHandle);
+          this.qualificationRefreshHandle = null;
+        }
+        this.qualificationPanel.set({ loading: false, error: null, data: null });
+        return;
+      }
+
+      if (this.qualificationRefreshHandle !== null) {
+        window.clearTimeout(this.qualificationRefreshHandle);
+      }
+
+      this.qualificationRefreshHandle = window.setTimeout(() => {
+        this.refreshQualification(opportunityId, payload);
+      }, 350);
+    }, { injector: this.injector });
+
+    effect(() => {
+      const opportunityId = this.workflowOpportunityId();
+      const payload = this.selectionRequestPayload();
+
+      if (!opportunityId || !payload) {
+        if (this.selectionRefreshHandle !== null) {
+          window.clearTimeout(this.selectionRefreshHandle);
+          this.selectionRefreshHandle = null;
+        }
+        this.selectionPanel.set({ loading: false, error: null, data: null });
+        return;
+      }
+
+      if (this.selectionRefreshHandle !== null) {
+        window.clearTimeout(this.selectionRefreshHandle);
+      }
+
+      this.selectionRefreshHandle = window.setTimeout(() => {
+        this.refreshSelection(opportunityId, payload);
+      }, 350);
     }, { injector: this.injector });
 
     this.refreshRecentSubmissions();
@@ -307,6 +443,10 @@ export class ProposalWizardService {
     this.submitErrorMessage.set(null);
     this.lastSubmissionReceipt.set(null);
     this.lastSubmittedSnapshot.set(null);
+    this.triagePanel.set({ loading: false, error: null, data: null });
+    this.qualificationPanel.set({ loading: false, error: null, data: null });
+    this.selectionPanel.set({ loading: false, error: null, data: null });
+    this.lastSelectionDecision.set(null);
   }
 
   canSelectRecommendation(status: ProposalRecommendationStatus): boolean {
@@ -314,7 +454,11 @@ export class ProposalWizardService {
       return true;
     }
 
-    return this.assessment().canProceedToDecision;
+    if (status === 'go') {
+      return this.decisionPreview().status === 'go';
+    }
+
+    return this.hasWorkflowRecommendationInputs();
   }
 
   setFinalRecommendation(status: ProposalRecommendationStatus): boolean {
@@ -350,6 +494,16 @@ export class ProposalWizardService {
     }));
   }
 
+  updateSelectionField(field: keyof ProposalWizardState['selection'], value: string): void {
+    this.state.update((current) => ({
+      ...current,
+      selection: {
+        ...current.selection,
+        [field]: value
+      }
+    }));
+  }
+
   submitForReview(): void {
     if (!this.canSubmitForReview()) {
       return;
@@ -370,15 +524,17 @@ export class ProposalWizardService {
     this.isSubmitting.set(true);
     this.submitErrorMessage.set(null);
 
-    this.api
-      .submitDecisionPacket({
-        state: this.state(),
-        decisionPacket: this.decisionPacket(),
-        decisionPreview: this.decisionPreview(),
-        submittedBy: this.auth.currentUsername(),
-        submittedAtIso: submissionTimestamp
-      })
-      .pipe(finalize(() => this.isSubmitting.set(false)))
+    this.submitSelectionDecisionIfNeeded()
+      .pipe(
+        switchMap(() => this.api.submitDecisionPacket({
+          state: this.state(),
+          decisionPacket: this.decisionPacket(),
+          decisionPreview: this.decisionPreview(),
+          submittedBy: this.auth.currentUsername(),
+          submittedAtIso: submissionTimestamp
+        })),
+        finalize(() => this.isSubmitting.set(false))
+      )
       .subscribe({
         next: (receipt) => {
           this.lastSubmissionReceipt.set(receipt);
@@ -413,6 +569,25 @@ export class ProposalWizardService {
 
   retrySubmission(): void {
     this.submitForReview();
+  }
+
+  refreshWorkflowInsights(): void {
+    const opportunityId = this.workflowOpportunityId();
+    const triagePayload = this.triageRequestPayload();
+    const qualificationPayload = this.qualificationRequestPayload();
+
+    if (opportunityId && triagePayload) {
+      this.refreshTriage(opportunityId, triagePayload);
+    }
+
+    if (opportunityId && qualificationPayload) {
+      this.refreshQualification(opportunityId, qualificationPayload);
+    }
+
+    const selectionPayload = this.selectionRequestPayload();
+    if (opportunityId && selectionPayload) {
+      this.refreshSelection(opportunityId, selectionPayload);
+    }
   }
 
   canAdvanceFromCurrentStep(): boolean {
@@ -582,27 +757,30 @@ export class ProposalWizardService {
     }
 
     const representedManufacturer = current.eligibility.representedManufacturer.trim();
-    const approvedManufacturers = current.eligibility.approvedManufacturersRaw
-      .split(/\n|,|;/)
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
+    const approvedManufacturers = this.parseApprovedManufacturers(current.eligibility.approvedManufacturersRaw);
 
     const hasConflict = representedManufacturer.length > 0
       && approvedManufacturers.length > 0
       && !approvedManufacturers.some((item) => item.toLowerCase() === representedManufacturer.toLowerCase());
+
+    const qualification = this.qualificationPanel().data;
+    const qualificationReady = qualification !== null;
+    const qualificationAllowsDecision = qualificationReady && qualification.recommendation !== 'needs_review' && qualification.blockers.length === 0;
 
     return {
       missingEvidence,
       hasConflict,
       representedManufacturer,
       approvedManufacturers,
-      canProceedToDecision: missingEvidence.length === 0 && !hasConflict
+      canProceedToDecision: missingEvidence.length === 0 && !hasConflict && qualificationAllowsDecision
     };
   }
 
   private computeDecisionPreview(): ProposalDecisionPreview {
-    const state = this.state();
     const assessment = this.computeAssessment();
+    const triage = this.triagePanel().data;
+    const qualification = this.qualificationPanel().data;
+    const selection = this.selectionPanel().data;
     const blockers: string[] = [];
 
     for (const step of [0, 1, 2, 3]) {
@@ -614,27 +792,68 @@ export class ProposalWizardService {
       blockers.push('Represented manufacturer conflicts with approved manufacturers.');
     }
 
-    const hasMvpScope = state.scope.coolingTowers || state.scope.boilers || state.scope.pumps;
-    const onlyOutOfScopeSelection = !hasMvpScope && state.scope.heatExchangers;
-    if (onlyOutOfScopeSelection) {
+    if (!triage) {
+      blockers.push('Triage scorecard is not ready yet.');
+    }
+
+    if (!qualification) {
+      blockers.push('BOD qualification panel is not ready yet.');
+    }
+
+    if (!selection) {
+      blockers.push('Selection workbench is not ready yet.');
+    }
+
+    if (this.triagePanel().error) {
+      blockers.push(this.triagePanel().error!);
+    }
+
+    if (this.qualificationPanel().error) {
+      blockers.push(this.qualificationPanel().error!);
+    }
+
+    if (this.selectionPanel().error) {
+      blockers.push(this.selectionPanel().error!);
+    }
+
+    if (triage) {
+      blockers.push(...triage.blockers);
+    }
+
+    if (qualification) {
+      blockers.push(...qualification.blockers);
+    }
+
+    if (selection) {
+      blockers.push(...selection.blockers);
+    }
+
+    const uniqueBlockers = Array.from(new Set(blockers));
+
+    if (triage?.recommendation === 'pass' || qualification?.recommendation === 'no_go') {
       return {
         status: 'no_go',
-        rationale: 'Only out-of-scope equipment was selected for the MVP.',
-        blockers: ['Heat exchangers are tracked but not eligible for MVP automation decisions.']
+        rationale: 'Workflow evidence indicates the opportunity should not proceed without escalation.',
+        blockers: uniqueBlockers
       };
     }
 
-    if (blockers.length > 0) {
+    if (
+      uniqueBlockers.length > 0
+      || triage?.recommendation === 'needs_review'
+      || qualification?.recommendation === 'needs_review'
+      || selection?.overallStatus !== 'aligned'
+    ) {
       return {
         status: 'needs_review',
-        rationale: 'Required evidence is incomplete or conflicting; final recommendation is blocked.',
-        blockers
+        rationale: 'Workflow signals require reviewer attention before a final recommendation can be approved.',
+        blockers: uniqueBlockers
       };
     }
 
     return {
       status: 'go',
-      rationale: 'Current draft has required MVP scope and no evidence conflicts.',
+      rationale: 'Triage and BOD qualification both support moving forward on this opportunity.',
       blockers: []
     };
   }
@@ -653,6 +872,10 @@ export class ProposalWizardService {
     if (assessment.hasConflict) {
       blockers.push('Represented manufacturer conflicts with approved manufacturers.');
     }
+    if (this.selectionPanel().error) {
+      blockers.push(this.selectionPanel().error!);
+    }
+    blockers.push(...(this.selectionPanel().data?.blockers ?? []));
 
     const docs = current.documents;
     const evidenceSummary = {
@@ -672,8 +895,30 @@ export class ProposalWizardService {
         approvedManufacturers: assessment.approvedManufacturers,
         isEligible: !assessment.hasConflict && assessment.approvedManufacturers.length > 0
       },
+      workflowSummary: {
+        triageConfidence: this.triagePanel().data?.confidence ?? null,
+        qualificationConfidence: this.qualificationPanel().data?.confidence ?? null,
+        selectionConfidence: this.selectionPanel().data?.confidence ?? null,
+        triageRecommendation: this.triagePanel().data?.recommendation ?? null,
+        qualificationRecommendation: this.qualificationPanel().data?.recommendation ?? null
+        ,selectionStatus: this.selectionPanel().data?.overallStatus ?? null
+      },
+      selectionWorkbench: {
+        toolPathModel: current.selection.toolPathModel.trim(),
+        manufacturerPathModel: current.selection.manufacturerPathModel.trim(),
+        overallStatus: this.selectionPanel().data?.overallStatus ?? null,
+        confidence: this.selectionPanel().data?.confidence ?? null,
+        deltaCount: this.selectionPanel().data?.deltas.length ?? 0,
+        deltas: (this.selectionPanel().data?.deltas ?? []).map((item) => ({
+          field: item.field,
+          severity: item.severity,
+          rationale: item.rationale,
+          toolPathValue: item.toolPathValue,
+          manufacturerValue: item.manufacturerValue
+        }))
+      },
       reasonCodes,
-      blockers
+      blockers: Array.from(new Set(blockers))
     };
   }
 
@@ -708,6 +953,14 @@ export class ProposalWizardService {
       codes.add('SCOPE_MVP_OUTSIDE');
     }
 
+    const triage = this.triagePanel().data;
+    const qualification = this.qualificationPanel().data;
+    const selection = this.selectionPanel().data;
+
+    triage?.reasonCodes.forEach((code) => codes.add(code));
+    qualification?.reasonCodes.forEach((code) => codes.add(code));
+    selection?.reasonCodes.forEach((code) => codes.add(code));
+
     if (codes.size === 0) {
       codes.add('READY_FOR_DECISION');
     }
@@ -721,6 +974,7 @@ export class ProposalWizardService {
       documents: state.documents,
       scope: state.scope,
       eligibility: state.eligibility,
+      selection: state.selection,
       finalDecision: {
         recommendation: state.finalDecision.recommendation,
         reviewNotes: state.finalDecision.reviewNotes
@@ -736,5 +990,227 @@ export class ProposalWizardService {
     }
 
     return 'Unable to submit decision packet.';
+  }
+
+  private parseApprovedManufacturers(rawValue: string): string[] {
+    return rawValue
+      .split(/\n|,|;/)
+      .map((item) => item.trim())
+      .filter((item, index, array) => item.length > 0 && array.indexOf(item) === index);
+  }
+
+  private buildWorkflowOpportunityId(): string | null {
+    const { projectName, projectNumber } = this.state().source;
+    const base = projectNumber.trim() || projectName.trim();
+    if (!base) {
+      return null;
+    }
+
+    return base
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || null;
+  }
+
+  private buildWorkflowCitations(): ProposalWorkflowCitation[] {
+    return this.state().documents
+      .filter((item) => item.type === 'specification' || item.type === 'addendum')
+      .slice(0, 2)
+      .map((item, index) => ({
+        claimId: `doc-${index + 1}`,
+        sourceDocumentId: item.id,
+        pageNumber: 1,
+        snippet: `${item.name} uploaded for workflow evidence review.`,
+        confidence: 0.75
+      }));
+  }
+
+  private buildTriageRequestPayload() {
+    const state = this.state();
+    const docs = state.documents;
+    const approvedManufacturers = this.approvedManufacturers();
+
+    if (!state.source.projectName.trim() || !state.source.bidDueDate.trim() || docs.length === 0 || !state.eligibility.representedManufacturer.trim()) {
+      return null;
+    }
+
+    return {
+      documentBundleId: docs.map((item) => item.id).join(',').slice(0, 200),
+      representedManufacturer: state.eligibility.representedManufacturer.trim(),
+      approvedManufacturers,
+      bidDueDateIso: state.source.bidDueDate ? `${state.source.bidDueDate}T00:00:00Z` : undefined,
+      bodFitScoreHint: state.scope.coolingTowers ? 0.82 : 0.68,
+      isIncumbentProject: state.source.bidVisibility === 'basis_of_design',
+      isStrategicCustomer: state.source.bidVisibility === 'invited'
+    };
+  }
+
+  private buildQualificationRequestPayload() {
+    const state = this.state();
+    const docs = state.documents;
+    const approvedManufacturers = this.approvedManufacturers();
+
+    if (!this.buildTriageRequestPayload() || approvedManufacturers.length === 0) {
+      return null;
+    }
+
+    const citations = this.buildWorkflowCitations();
+
+    return {
+      documentBundleId: docs.map((item) => item.id).join(',').slice(0, 200),
+      representedManufacturer: state.eligibility.representedManufacturer.trim(),
+      approvedManufacturers,
+      requiresCitations: citations.length > 0,
+      citations
+    };
+  }
+
+  private buildSelectionComparePayload() {
+    const selection = this.state().selection;
+    const qualification = this.qualificationPanel().data;
+
+    if (!qualification || !selection.toolPathModel.trim() || !selection.manufacturerPathModel.trim()) {
+      return null;
+    }
+
+    return {
+      toolPathModel: selection.toolPathModel.trim(),
+      recommendedToolPathModel: selection.toolPathModel.trim(),
+      manufacturerPathModel: selection.manufacturerPathModel.trim(),
+      notes: selection.comparisonNotes.trim() || undefined
+    };
+  }
+
+  private refreshTriage(opportunityId: string, payload: NonNullable<ReturnType<ProposalWizardService['buildTriageRequestPayload']>>): void {
+    const version = ++this.triageRequestVersion;
+    this.triagePanel.update((current) => ({ ...current, loading: true, error: null }));
+
+    this.api.runTriage(opportunityId, payload).subscribe({
+      next: (response) => {
+        if (version !== this.triageRequestVersion) {
+          return;
+        }
+
+        this.triagePanel.set({
+          loading: false,
+          error: null,
+          data: response.triage
+        });
+      },
+      error: () => {
+        if (version !== this.triageRequestVersion) {
+          return;
+        }
+
+        this.triagePanel.set({
+          loading: false,
+          error: 'Unable to load triage scorecard.',
+          data: null
+        });
+      }
+    });
+  }
+
+  private refreshQualification(
+    opportunityId: string,
+    payload: NonNullable<ReturnType<ProposalWizardService['buildQualificationRequestPayload']>>
+  ): void {
+    const version = ++this.qualificationRequestVersion;
+    this.qualificationPanel.update((current) => ({ ...current, loading: true, error: null }));
+
+    this.api.runQualification(opportunityId, payload).subscribe({
+      next: (response) => {
+        if (version !== this.qualificationRequestVersion) {
+          return;
+        }
+
+        this.qualificationPanel.set({
+          loading: false,
+          error: null,
+          data: response.qualification
+        });
+      },
+      error: () => {
+        if (version !== this.qualificationRequestVersion) {
+          return;
+        }
+
+        this.qualificationPanel.set({
+          loading: false,
+          error: 'Unable to load BOD qualification panel.',
+          data: null
+        });
+      }
+    });
+  }
+
+  private refreshSelection(
+    opportunityId: string,
+    payload: NonNullable<ReturnType<ProposalWizardService['buildSelectionComparePayload']>>
+  ): void {
+    const version = ++this.selectionRequestVersion;
+    this.selectionPanel.update((current) => ({ ...current, loading: true, error: null }));
+
+    this.api.compareSelection(opportunityId, payload).subscribe({
+      next: (response) => {
+        if (version !== this.selectionRequestVersion) {
+          return;
+        }
+
+        this.selectionPanel.set({
+          loading: false,
+          error: null,
+          data: response.selection
+        });
+      },
+      error: () => {
+        if (version !== this.selectionRequestVersion) {
+          return;
+        }
+
+        this.selectionPanel.set({
+          loading: false,
+          error: 'Unable to load selection workbench.',
+          data: null
+        });
+      }
+    });
+  }
+
+  private submitSelectionDecisionIfNeeded(): Observable<ProposalWorkflowStageDecisionResponse | null> {
+    const opportunityId = this.workflowOpportunityId();
+    const selection = this.selectionPanel().data;
+
+    if (!opportunityId || !selection) {
+      return of(null);
+    }
+
+    const recommendation = this.state().finalDecision.recommendation ?? 'needs_review';
+    const rationale = this.state().finalDecision.reviewNotes.trim() || this.decisionPreview().rationale;
+
+    return this.api.submitSelectionDecision(opportunityId, {
+      decision: this.mapFinalRecommendationToSelectionDecision(recommendation),
+      rationale
+    }).pipe(
+      switchMap((response) => {
+        this.lastSelectionDecision.set(response);
+        return of(response);
+      })
+    );
+  }
+
+  private hasWorkflowRecommendationInputs(): boolean {
+    return this.triagePanel().data !== null || this.qualificationPanel().data !== null || this.selectionPanel().data !== null;
+  }
+
+  private mapFinalRecommendationToSelectionDecision(status: ProposalRecommendationStatus): 'approve' | 'reject' | 'needs_review' {
+    if (status === 'go') {
+      return 'approve';
+    }
+    if (status === 'no_go') {
+      return 'reject';
+    }
+    return 'needs_review';
   }
 }

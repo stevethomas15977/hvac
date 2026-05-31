@@ -1,5 +1,4 @@
 import { Injectable } from '@angular/core';
-import { Amplify } from 'aws-amplify';
 import { buildCognitoConfig, isCognitoConfigured, type RuntimeCognitoSettings } from '../auth/cognito.config';
 import { ProposalAppConfig } from '../../pages/proposals-page.models';
 
@@ -35,6 +34,8 @@ export class RuntimeConfigService {
       console.warn('Cognito runtime config is incomplete. Update public/app-config.json or repository variables used by the frontend workflow.');
       return;
     }
+
+    const { Amplify } = await import('aws-amplify');
 
     Amplify.configure({
       Auth: {
