@@ -279,6 +279,43 @@ Metrics to emit (CloudWatch EMF or equivalent):
 
 ## Delivery Plan (Step-by-Step)
 
+## Current Checkpoint (Pinned)
+
+Last updated: 2026-05-31
+
+Completed:
+
+1. Step 0 Contract Freeze completed.
+2. Step 1 code changes merged to main:
+- API routes added for triage/qualification/selection endpoints.
+- DynamoDB attributes and GSIs added for stage and queue access patterns.
+- Lambda workflow stub routing added for contract-v1 responses.
+3. Development Terraform plan run succeeded in GitHub Actions.
+
+Latest workflow status:
+
+1. Development apply run 26714349110 completed with failure.
+2. Observed long-running DynamoDB GSI creation/backfill during apply.
+
+Known development drift to resolve before retrying apply:
+
+1. Development frontend bucket naming differs from current config intent:
+- Existing behavior references hvac-proposal-submittal.
+- Current tfvars intends hvac-proposal-submittal-development.
+2. Cognito callback/logout origin differences may be caused by repo variable mismatch for development base URL.
+
+Restart point (exact next actions):
+
+1. Confirm DynamoDB GSI status is ACTIVE for all indexes in development.
+2. Decide and lock development bucket naming strategy (keep existing or migrate).
+3. Align development GitHub variables with chosen naming/base URL.
+4. Re-run development Terraform apply.
+5. If apply fails due to existing unmanaged resources, import those specific resources (no manual state edits).
+
+Out of scope at this checkpoint:
+
+1. Any production apply, production workflow dispatch, or production manual writes.
+
 ### Step 0: Contract Freeze (1-2 days)
 
 Deliverables:
