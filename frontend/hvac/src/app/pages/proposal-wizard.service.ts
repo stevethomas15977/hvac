@@ -109,7 +109,7 @@ function defaultState(): ProposalWizardState {
     },
     documents: [],
     scope: {
-      coolingTowers: true,
+      coolingTowers: false,
       boilers: false,
       pumps: false,
       heatExchangers: false
