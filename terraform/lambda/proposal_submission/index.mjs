@@ -173,84 +173,21 @@ function resolveCognitoUsername(event) {
   return null;
 }
 
-function normalizeTenantHint(value) {
-  if (typeof value !== 'string' || !value.trim()) {
+function resolveTenantAdminScope(groups) {
+  const adminGroups = groups.filter((group) => group.endsWith('_admin'));
+  if (adminGroups.length === 0) {
     return null;
   }
 
-  return value.trim().toLowerCase();
-}
+  const groupSet = new Set(groups);
+  const pairedAdminGroup = adminGroups.find((group) => groupSet.has(group.replace(/_admin$/, '')));
+  const adminGroup = pairedAdminGroup ?? adminGroups[0];
+  const tenantGroup = adminGroup.replace(/_admin$/, '');
 
-function findGroupByTenantHint(groups, tenantHint) {
-  const normalizedHint = normalizeTenantHint(tenantHint);
-  if (!normalizedHint) {
-    return null;
-  }
-
-  const exactMatch = groups.find((group) => group.toLowerCase() === normalizedHint);
-  if (exactMatch) {
-    return exactMatch;
-  }
-
-  const exactTenantPrefixedMatch = groups.find((group) => group.toLowerCase() === `tenant_${normalizedHint}`);
-  if (exactTenantPrefixedMatch) {
-    return exactTenantPrefixedMatch;
-  }
-
-  const derivedAdminMatch = groups.find((group) => group.toLowerCase() === `${normalizedHint}_admin`);
-  if (derivedAdminMatch) {
-    return derivedAdminMatch.replace(/_admin$/i, '');
-  }
-
-  const tenantPrefixedAdminMatch = groups.find((group) => group.toLowerCase() === `tenant_${normalizedHint}_admin`);
-  if (tenantPrefixedAdminMatch) {
-    return tenantPrefixedAdminMatch.replace(/_admin$/i, '');
-  }
-
-  return null;
-}
-
-function resolveTenantGroup(groups, tenantHint) {
-  const hintedGroup = findGroupByTenantHint(groups, tenantHint);
-  if (hintedGroup) {
-    return hintedGroup;
-  }
-
-  const tenantGroup = groups.find((group) => group.startsWith('tenant_') && !group.endsWith('_admin'));
-  if (tenantGroup) {
-    return tenantGroup;
-  }
-
-  const tenantAdminGroup = groups.find((group) => group.startsWith('tenant_') && group.endsWith('_admin'));
-  if (tenantAdminGroup) {
-    return tenantAdminGroup.replace(/_admin$/, '');
-  }
-
-  const genericTenantGroup = groups.find((group) => !group.endsWith('_admin'));
-  if (genericTenantGroup) {
-    return genericTenantGroup;
-  }
-
-  const genericAdminGroup = groups.find((group) => group.endsWith('_admin'));
-  if (genericAdminGroup) {
-    return genericAdminGroup.replace(/_admin$/, '');
-  }
-
-  return null;
-}
-
-function resolveAdminGroup(groups, tenantGroup) {
-  const canonicalAdminGroup = `${tenantGroup}_admin`;
-  if (groups.includes(canonicalAdminGroup)) {
-    return canonicalAdminGroup;
-  }
-
-  const discoveredAdminGroup = groups.find((group) => group.endsWith('_admin') && group.replace(/_admin$/, '') === tenantGroup);
-  if (discoveredAdminGroup) {
-    return discoveredAdminGroup;
-  }
-
-  return canonicalAdminGroup;
+  return {
+    tenantGroup,
+    adminGroup
+  };
 }
 
 function toBooleanClaim(value) {
@@ -258,12 +195,7 @@ function toBooleanClaim(value) {
 }
 
 function hasTenantAdminAccess(event, groups, adminGroup) {
-  if (groups.includes(adminGroup)) {
-    return true;
-  }
-
-  const claims = getJwtClaims(event);
-  return toBooleanClaim(claims?.['custom:tenant_admin']);
+  return groups.includes(adminGroup);
 }
 
 async function requireTenantAdmin(event) {
@@ -285,20 +217,16 @@ async function requireTenantAdmin(event) {
     }
   }
 
-  const claims = getJwtClaims(event);
-  const tenantHint = claims?.['custom:tenant_code'] ?? claims?.['custom:tenant_id'] ?? null;
-
-  const tenantGroup = resolveTenantGroup(groups, tenantHint);
-  if (!tenantGroup) {
+  const scope = resolveTenantAdminScope(groups);
+  if (!scope) {
     return {
-      error: errorResponse(403, 'forbidden', 'Unable to resolve tenant group from JWT claims.', {
-        tenantHint,
+      error: errorResponse(403, 'forbidden', 'Tenant admin group membership is required.', {
         groups
       })
     };
   }
 
-  const adminGroup = resolveAdminGroup(groups, tenantGroup);
+  const { tenantGroup, adminGroup } = scope;
 
   if (!hasTenantAdminAccess(event, groups, adminGroup)) {
     return {
