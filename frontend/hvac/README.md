@@ -40,9 +40,21 @@ This will compile your project and store the build artifacts in the `dist/` dire
 
 The Proposals page uses a mode-switchable service layer so the UI can run in mock mode now and switch to real HTTP endpoints later without component rewrites.
 
+### Runtime config ownership
+
+- `public/app-config.json` in this repository is the local development fallback template.
+- The GitHub Actions frontend deploy workflow rewrites `public/app-config.json` during deployment for `development` and `production`.
+- Deployed `development` and `production` builds are expected to run with Cognito auth and HTTP wizard API mode, and deployment fails if required runtime values are missing.
+
+Environment policy summary:
+
+- Local development: defaults can remain `mock` + `local` unless you intentionally configure local Cognito/API testing.
+- CI/deployed development: generated runtime config (not the checked-in template).
+- CI/deployed production: generated runtime config (not the checked-in template).
+
 ### Mode switch
 
-Configure mode in `public/app-config.json`:
+Configure local mode in `public/app-config.json`:
 
 ```json
 {
