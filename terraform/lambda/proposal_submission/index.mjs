@@ -162,8 +162,18 @@ function parseClaimGroups(event) {
   return [];
 }
 
-function resolveTenantGroupFromClaims(event) {
-  const groups = parseClaimGroups(event);
+function resolveCognitoUsername(event) {
+  const claims = getJwtClaims(event);
+  const username = claims?.['cognito:username'];
+
+  if (typeof username === 'string' && username.trim()) {
+    return username.trim();
+  }
+
+  return null;
+}
+
+function resolveTenantGroup(groups) {
   const tenantGroup = groups.find((group) => group.startsWith('tenant_') && !group.endsWith('_admin'));
   if (tenantGroup) {
     return tenantGroup;
@@ -174,30 +184,75 @@ function resolveTenantGroupFromClaims(event) {
     return tenantAdminGroup.replace(/_admin$/, '');
   }
 
+  const genericTenantGroup = groups.find((group) => !group.endsWith('_admin'));
+  if (genericTenantGroup) {
+    return genericTenantGroup;
+  }
+
+  const genericAdminGroup = groups.find((group) => group.endsWith('_admin'));
+  if (genericAdminGroup) {
+    return genericAdminGroup.replace(/_admin$/, '');
+  }
+
   return null;
 }
 
-function hasTenantAdminAccess(event, tenantGroup) {
-  const groups = parseClaimGroups(event);
-  const adminGroup = `${tenantGroup}_admin`;
-  return groups.includes(adminGroup);
+function resolveAdminGroup(groups, tenantGroup) {
+  const canonicalAdminGroup = `${tenantGroup}_admin`;
+  if (groups.includes(canonicalAdminGroup)) {
+    return canonicalAdminGroup;
+  }
+
+  const discoveredAdminGroup = groups.find((group) => group.endsWith('_admin') && group.replace(/_admin$/, '') === tenantGroup);
+  if (discoveredAdminGroup) {
+    return discoveredAdminGroup;
+  }
+
+  return canonicalAdminGroup;
 }
 
-function requireTenantAdmin(event) {
+function toBooleanClaim(value) {
+  return value === true || value === 'true' || value === 'yes';
+}
+
+function hasTenantAdminAccess(event, groups, adminGroup) {
+  if (groups.includes(adminGroup)) {
+    return true;
+  }
+
+  const claims = getJwtClaims(event);
+  return toBooleanClaim(claims?.['custom:tenant_admin']);
+}
+
+async function requireTenantAdmin(event) {
   if (!userPoolId) {
     return {
       error: errorResponse(500, 'configuration_error', 'COGNITO_USER_POOL_ID is not configured.')
     };
   }
 
-  const tenantGroup = resolveTenantGroupFromClaims(event);
+  let groups = parseClaimGroups(event);
+  if (groups.length === 0) {
+    const username = resolveCognitoUsername(event);
+    if (username) {
+      try {
+        groups = await listUserGroups(username);
+      } catch {
+        groups = [];
+      }
+    }
+  }
+
+  const tenantGroup = resolveTenantGroup(groups);
   if (!tenantGroup) {
     return {
       error: errorResponse(403, 'forbidden', 'Unable to resolve tenant group from JWT claims.')
     };
   }
 
-  if (!hasTenantAdminAccess(event, tenantGroup)) {
+  const adminGroup = resolveAdminGroup(groups, tenantGroup);
+
+  if (!hasTenantAdminAccess(event, groups, adminGroup)) {
     return {
       error: errorResponse(403, 'forbidden', 'Tenant admin group membership is required.')
     };
@@ -205,7 +260,7 @@ function requireTenantAdmin(event) {
 
   return {
     tenantGroup,
-    adminGroup: `${tenantGroup}_admin`,
+    adminGroup,
     actor: resolveSubmittedBy(event, {})
   };
 }
@@ -290,7 +345,7 @@ async function buildTenantWorkspace(tenantGroup, adminGroup) {
 }
 
 async function handleTenantWorkspace(event) {
-  const auth = requireTenantAdmin(event);
+  const auth = await requireTenantAdmin(event);
   if (auth.error) {
     return auth.error;
   }
@@ -309,7 +364,7 @@ async function handleTenantWorkspace(event) {
 }
 
 async function handleTenantAdminRoleUpdate(event) {
-  const auth = requireTenantAdmin(event);
+  const auth = await requireTenantAdmin(event);
   if (auth.error) {
     return auth.error;
   }
