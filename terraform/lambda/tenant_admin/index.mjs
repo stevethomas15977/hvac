@@ -2,7 +2,8 @@ import {
   AdminListGroupsForUserCommand,
   AdminUpdateUserAttributesCommand,
   CognitoIdentityProviderClient,
-  ListUsersCommand
+  ListUsersCommand,
+  ListUsersInGroupCommand
 } from '@aws-sdk/client-cognito-identity-provider';
 
 const cognitoClient = new CognitoIdentityProviderClient({});
@@ -155,11 +156,25 @@ function toTenantKey(groupName) {
     ? withoutAdminSuffix.slice('tenant_'.length)
     : withoutAdminSuffix;
 
-  return withoutTenantPrefix.trim() || null;
+  const tenantKey = withoutTenantPrefix.trim();
+  return tenantKey ? tenantKey.toLowerCase() : null;
 }
 
 function isUserInTenantScope(groups, tenantKey) {
   return groups.some((group) => toTenantKey(group) === tenantKey);
+}
+
+function resolveTenantGroupCandidates(tenantGroup, tenantKey) {
+  const candidates = [
+    tenantGroup,
+    tenantKey,
+    `tenant_${tenantKey}`,
+    `${tenantKey}_admin`,
+    `tenant_${tenantKey}_admin`
+  ];
+
+  return Array.from(new Set(candidates.filter((group) => typeof group === 'string' && group.trim())))
+    .map((group) => group.trim());
 }
 
 function toBooleanClaim(value) {
@@ -192,6 +207,49 @@ async function listAllPoolUsers() {
   } while (paginationToken);
 
   return users;
+}
+
+async function listUsersInGroup(groupName) {
+  const users = [];
+  let nextToken;
+
+  do {
+    const page = await cognitoClient.send(new ListUsersInGroupCommand({
+      GroupName: groupName,
+      UserPoolId: userPoolId,
+      NextToken: nextToken,
+      Limit: 60
+    }));
+
+    users.push(...(page.Users || []));
+    nextToken = page.NextToken;
+  } while (nextToken);
+
+  return users;
+}
+
+async function listTenantScopedUsers(tenantGroup, tenantKey) {
+  const usersByUsername = new Map();
+  const candidates = resolveTenantGroupCandidates(tenantGroup, tenantKey);
+
+  for (const groupName of candidates) {
+    try {
+      const users = await listUsersInGroup(groupName);
+      for (const user of users) {
+        if (typeof user.Username === 'string' && user.Username.trim()) {
+          usersByUsername.set(user.Username, user);
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'ResourceNotFoundException') {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  return Array.from(usersByUsername.values());
 }
 
 async function listUserGroups(username) {
@@ -264,7 +322,6 @@ function toIsoDate(value) {
 }
 
 async function buildTenantWorkspace(tenantGroup) {
-  const users = await listAllPoolUsers();
   const tenantKey = toTenantKey(tenantGroup);
 
   if (!tenantKey) {
@@ -273,6 +330,13 @@ async function buildTenantWorkspace(tenantGroup) {
       users: [],
       events: []
     };
+  }
+
+  const users = await listTenantScopedUsers(tenantGroup, tenantKey);
+
+  if (users.length === 0) {
+    const fallbackUsers = await listAllPoolUsers();
+    users.push(...fallbackUsers);
   }
 
   const tenantUsers = await Promise.all(users.map(async (user) => {
