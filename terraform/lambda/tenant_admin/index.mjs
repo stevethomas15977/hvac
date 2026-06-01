@@ -90,21 +90,56 @@ function parseClaimGroups(event) {
   const groupsClaim = claims?.['cognito:groups'];
 
   if (Array.isArray(groupsClaim)) {
-    return groupsClaim.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+    return groupsClaim
+      .map((value) => sanitizeGroupName(value))
+      .filter(Boolean);
   }
 
   if (typeof groupsClaim === 'string' && groupsClaim.trim()) {
     try {
       const parsed = JSON.parse(groupsClaim);
       if (Array.isArray(parsed)) {
-        return parsed.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+        return parsed
+          .map((value) => sanitizeGroupName(value))
+          .filter(Boolean);
+      }
+
+      if (typeof parsed === 'string' && parsed.trim()) {
+        return [sanitizeGroupName(parsed)].filter(Boolean);
       }
     } catch {
-      return groupsClaim.split(',').map((value) => value.trim()).filter(Boolean);
+      return groupsClaim
+        .split(',')
+        .map((value) => sanitizeGroupName(value))
+        .filter(Boolean);
     }
   }
 
   return [];
+}
+
+function sanitizeGroupName(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  let normalized = value.trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (normalized.startsWith('[') && normalized.endsWith(']')) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"'))
+    || (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  return normalized;
 }
 
 function resolveCognitoUsername(event) {
@@ -139,11 +174,7 @@ function resolveTenantAdminScope(groups) {
 }
 
 function toTenantKey(groupName) {
-  if (typeof groupName !== 'string') {
-    return null;
-  }
-
-  const trimmed = groupName.trim();
+  const trimmed = sanitizeGroupName(groupName);
   if (!trimmed) {
     return null;
   }
