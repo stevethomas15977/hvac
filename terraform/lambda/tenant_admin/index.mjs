@@ -125,10 +125,41 @@ function resolveTenantAdminScope(groups) {
 
   const tenantGroups = nonEmptyGroups.filter((group) => !group.endsWith('_admin'));
   const tenantGroup = tenantGroups[0] ?? nonEmptyGroups[0];
+  const tenantKey = toTenantKey(tenantGroup);
+
+  if (!tenantKey) {
+    return null;
+  }
 
   return {
-    tenantGroup
+    tenantGroup,
+    tenantKey
   };
+}
+
+function toTenantKey(groupName) {
+  if (typeof groupName !== 'string') {
+    return null;
+  }
+
+  const trimmed = groupName.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const withoutAdminSuffix = trimmed.endsWith('_admin')
+    ? trimmed.slice(0, -'_admin'.length)
+    : trimmed;
+
+  const withoutTenantPrefix = withoutAdminSuffix.startsWith('tenant_')
+    ? withoutAdminSuffix.slice('tenant_'.length)
+    : withoutAdminSuffix;
+
+  return withoutTenantPrefix.trim() || null;
+}
+
+function isUserInTenantScope(groups, tenantKey) {
+  return groups.some((group) => toTenantKey(group) === tenantKey);
 }
 
 function toBooleanClaim(value) {
@@ -234,6 +265,16 @@ function toIsoDate(value) {
 
 async function buildTenantWorkspace(tenantGroup) {
   const users = await listAllPoolUsers();
+  const tenantKey = toTenantKey(tenantGroup);
+
+  if (!tenantKey) {
+    return {
+      tenantGroup,
+      users: [],
+      events: []
+    };
+  }
+
   const tenantUsers = await Promise.all(users.map(async (user) => {
     const username = user.Username;
     if (!username) {
@@ -241,7 +282,7 @@ async function buildTenantWorkspace(tenantGroup) {
     }
 
     const groups = await listUserGroups(username);
-    const belongsToTenant = groups.includes(tenantGroup);
+    const belongsToTenant = isUserInTenantScope(groups, tenantKey);
     if (!belongsToTenant) {
       return null;
     }
@@ -306,7 +347,7 @@ async function handleTenantAdminRoleUpdate(event) {
 
   try {
     const groups = await listUserGroups(username);
-    const belongsToTenant = groups.includes(auth.tenantGroup);
+    const belongsToTenant = isUserInTenantScope(groups, auth.tenantKey);
     if (!belongsToTenant) {
       return errorResponse(404, 'not_found', 'User is not in the tenant scope.');
     }
