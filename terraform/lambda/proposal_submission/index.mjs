@@ -173,7 +173,49 @@ function resolveCognitoUsername(event) {
   return null;
 }
 
-function resolveTenantGroup(groups) {
+function normalizeTenantHint(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  return value.trim().toLowerCase();
+}
+
+function findGroupByTenantHint(groups, tenantHint) {
+  const normalizedHint = normalizeTenantHint(tenantHint);
+  if (!normalizedHint) {
+    return null;
+  }
+
+  const exactMatch = groups.find((group) => group.toLowerCase() === normalizedHint);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const exactTenantPrefixedMatch = groups.find((group) => group.toLowerCase() === `tenant_${normalizedHint}`);
+  if (exactTenantPrefixedMatch) {
+    return exactTenantPrefixedMatch;
+  }
+
+  const derivedAdminMatch = groups.find((group) => group.toLowerCase() === `${normalizedHint}_admin`);
+  if (derivedAdminMatch) {
+    return derivedAdminMatch.replace(/_admin$/i, '');
+  }
+
+  const tenantPrefixedAdminMatch = groups.find((group) => group.toLowerCase() === `tenant_${normalizedHint}_admin`);
+  if (tenantPrefixedAdminMatch) {
+    return tenantPrefixedAdminMatch.replace(/_admin$/i, '');
+  }
+
+  return null;
+}
+
+function resolveTenantGroup(groups, tenantHint) {
+  const hintedGroup = findGroupByTenantHint(groups, tenantHint);
+  if (hintedGroup) {
+    return hintedGroup;
+  }
+
   const tenantGroup = groups.find((group) => group.startsWith('tenant_') && !group.endsWith('_admin'));
   if (tenantGroup) {
     return tenantGroup;
@@ -243,10 +285,16 @@ async function requireTenantAdmin(event) {
     }
   }
 
-  const tenantGroup = resolveTenantGroup(groups);
+  const claims = getJwtClaims(event);
+  const tenantHint = claims?.['custom:tenant_code'] ?? claims?.['custom:tenant_id'] ?? null;
+
+  const tenantGroup = resolveTenantGroup(groups, tenantHint);
   if (!tenantGroup) {
     return {
-      error: errorResponse(403, 'forbidden', 'Unable to resolve tenant group from JWT claims.')
+      error: errorResponse(403, 'forbidden', 'Unable to resolve tenant group from JWT claims.', {
+        tenantHint,
+        groups
+      })
     };
   }
 
