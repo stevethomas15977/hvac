@@ -1,15 +1,15 @@
 {
   "app": {
     "proposalApiMode": "mock",
-    "proposalWizardApiMode": "mock",
-    "proposalWizardApiBaseUrl": "",
-    "authMode": "local"
+    "proposalWizardApiMode": "http",
+    "proposalWizardApiBaseUrl": "https://9v15p259h4.execute-api.us-east-1.amazonaws.com",
+    "authMode": "cognito"
   },
   "cognito": {
-    "userPoolId": "",
-    "userPoolClientId": "",
-    "domain": "",
-    "frontendBaseUrl": "",
+    "userPoolId": "us-east-1_BCiF1vC0f",
+    "userPoolClientId": "53fj59peq7e6967el5ruulqkob",
+    "domain": "hvac-499181527793.auth.us-east-1.amazoncognito.com",
+    "frontendBaseUrl": "http://localhost:4200",
     "localOrigins": [
       "http://localhost:4200",
       "http://localhost:8080"

@@ -46,6 +46,13 @@ The Proposals page uses a mode-switchable service layer so the UI can run in moc
 - The GitHub Actions frontend deploy workflow rewrites `public/app-config.json` during deployment for `development` and `production`.
 - Deployed `development` and `production` builds are expected to run with Cognito auth and HTTP wizard API mode, and deployment fails if required runtime values are missing.
 
+Local workflow for sensitive values:
+
+- Create `locals.env` in the frontend project root (this file is git-ignored).
+- Run `npm start`; it executes `npm run generate:local-config` before `ng serve`.
+- The generator reads `locals.env` and writes `public/app-config.json` for local runtime.
+- GitHub Actions is unaffected because deploy workflows generate runtime config from repository/environment variables.
+
 Environment policy summary:
 
 - Local development: defaults can remain `mock` + `local` unless you intentionally configure local Cognito/API testing.

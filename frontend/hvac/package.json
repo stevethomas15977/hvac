@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
+    "start": "npm run generate:local-config && ng serve",
+    "generate:local-config": "node scripts/generate-local-runtime-config.mjs",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
