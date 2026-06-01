@@ -9,6 +9,17 @@ data "aws_iam_policy_document" "proposal_submission_lambda_assume_role" {
   }
 }
 
+data "aws_iam_policy_document" "tenant_admin_lambda_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
 resource "aws_iam_role" "proposal_submission_lambda" {
   name               = "hvac-proposal-submission-lambda-role"
   assume_role_policy = data.aws_iam_policy_document.proposal_submission_lambda_assume_role.json
@@ -42,9 +53,20 @@ resource "aws_iam_role_policy" "proposal_submission_lambda_dynamodb" {
     ]
   })
 }
-resource "aws_iam_role_policy" "proposal_submission_lambda_cognito_admin" {
-  name = "hvac-proposal-submission-cognito-admin"
-  role = aws_iam_role.proposal_submission_lambda.id
+
+resource "aws_iam_role" "tenant_admin_lambda" {
+  name               = "hvac-tenant-admin-lambda-role"
+  assume_role_policy = data.aws_iam_policy_document.tenant_admin_lambda_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "tenant_admin_lambda_basic" {
+  role       = aws_iam_role.tenant_admin_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "tenant_admin_lambda_cognito_admin" {
+  name = "hvac-tenant-admin-cognito-admin"
+  role = aws_iam_role.tenant_admin_lambda.id
 
   policy = jsonencode({
     Version = "2012-10-17"
