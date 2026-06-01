@@ -1,10 +1,19 @@
 import crypto from 'node:crypto';
+import {
+  AdminAddUserToGroupCommand,
+  AdminListGroupsForUserCommand,
+  AdminRemoveUserFromGroupCommand,
+  CognitoIdentityProviderClient,
+  ListUsersCommand
+} from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const cognitoClient = new CognitoIdentityProviderClient({});
 const tableName = process.env.PROPOSAL_SUBMISSIONS_TABLE;
 const defaultTenantId = process.env.PROPOSAL_DEFAULT_TENANT_ID || 'development';
+const userPoolId = process.env.COGNITO_USER_POOL_ID || '';
 
 const workflowStubMode = (process.env.PROPOSAL_WORKFLOW_STUB_MODE || 'false').toLowerCase() === 'true';
 
@@ -128,6 +137,241 @@ function parseRequestBody(event) {
     return JSON.parse(event.body);
   } catch {
     return null;
+  }
+}
+
+function parseClaimGroups(event) {
+  const claims = getJwtClaims(event);
+  const groupsClaim = claims?.['cognito:groups'];
+
+  if (Array.isArray(groupsClaim)) {
+    return groupsClaim.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+  }
+
+  if (typeof groupsClaim === 'string' && groupsClaim.trim()) {
+    try {
+      const parsed = JSON.parse(groupsClaim);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+      }
+    } catch {
+      return groupsClaim.split(',').map((value) => value.trim()).filter(Boolean);
+    }
+  }
+
+  return [];
+}
+
+function resolveTenantGroupFromClaims(event) {
+  const groups = parseClaimGroups(event);
+  const tenantGroup = groups.find((group) => group.startsWith('tenant_') && !group.endsWith('_admin'));
+  if (tenantGroup) {
+    return tenantGroup;
+  }
+
+  const tenantAdminGroup = groups.find((group) => group.startsWith('tenant_') && group.endsWith('_admin'));
+  if (tenantAdminGroup) {
+    return tenantAdminGroup.replace(/_admin$/, '');
+  }
+
+  return null;
+}
+
+function hasTenantAdminAccess(event, tenantGroup) {
+  const groups = parseClaimGroups(event);
+  const adminGroup = `${tenantGroup}_admin`;
+  return groups.includes(adminGroup);
+}
+
+function requireTenantAdmin(event) {
+  if (!userPoolId) {
+    return {
+      error: errorResponse(500, 'configuration_error', 'COGNITO_USER_POOL_ID is not configured.')
+    };
+  }
+
+  const tenantGroup = resolveTenantGroupFromClaims(event);
+  if (!tenantGroup) {
+    return {
+      error: errorResponse(403, 'forbidden', 'Unable to resolve tenant group from JWT claims.')
+    };
+  }
+
+  if (!hasTenantAdminAccess(event, tenantGroup)) {
+    return {
+      error: errorResponse(403, 'forbidden', 'Tenant admin group membership is required.')
+    };
+  }
+
+  return {
+    tenantGroup,
+    adminGroup: `${tenantGroup}_admin`,
+    actor: resolveSubmittedBy(event, {})
+  };
+}
+
+function getUserEmail(user) {
+  const emailAttribute = user.Attributes?.find((attribute) => attribute.Name === 'email');
+  if (typeof emailAttribute?.Value === 'string' && emailAttribute.Value.trim()) {
+    return emailAttribute.Value;
+  }
+
+  return 'No email';
+}
+
+function toIsoDate(value) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return new Date().toISOString();
+}
+
+async function listAllPoolUsers() {
+  const users = [];
+  let paginationToken;
+
+  do {
+    const page = await cognitoClient.send(new ListUsersCommand({
+      UserPoolId: userPoolId,
+      PaginationToken: paginationToken,
+      Limit: 60
+    }));
+
+    users.push(...(page.Users || []));
+    paginationToken = page.PaginationToken;
+  } while (paginationToken);
+
+  return users;
+}
+
+async function listUserGroups(username) {
+  const result = await cognitoClient.send(new AdminListGroupsForUserCommand({
+    Username: username,
+    UserPoolId: userPoolId,
+    Limit: 60
+  }));
+
+  return (result.Groups || [])
+    .map((group) => group.GroupName)
+    .filter((group) => typeof group === 'string');
+}
+
+async function buildTenantWorkspace(tenantGroup, adminGroup) {
+  const users = await listAllPoolUsers();
+  const tenantUsers = await Promise.all(users.map(async (user) => {
+    const username = user.Username;
+    if (!username) {
+      return null;
+    }
+
+    const groups = await listUserGroups(username);
+    const belongsToTenant = groups.includes(tenantGroup) || groups.includes(adminGroup);
+    if (!belongsToTenant) {
+      return null;
+    }
+
+    return {
+      username,
+      email: getUserEmail(user),
+      groups,
+      isTenantAdmin: groups.includes(adminGroup),
+      lastModifiedAt: toIsoDate(user.UserLastModifiedDate)
+    };
+  }));
+
+  return {
+    tenantGroup,
+    users: tenantUsers
+      .filter((user) => user !== null)
+      .sort((a, b) => a.username.localeCompare(b.username)),
+    events: []
+  };
+}
+
+async function handleTenantWorkspace(event) {
+  const auth = requireTenantAdmin(event);
+  if (auth.error) {
+    return auth.error;
+  }
+
+  try {
+    return response(200, await buildTenantWorkspace(auth.tenantGroup, auth.adminGroup));
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'tenant_admin_workspace_query_failed',
+      tenantGroup: auth.tenantGroup,
+      actor: auth.actor,
+      error: toStructuredError(error)
+    }));
+    return errorResponse(500, 'internal_error', 'Unable to load tenant admin workspace.');
+  }
+}
+
+async function handleTenantAdminRoleUpdate(event) {
+  const auth = requireTenantAdmin(event);
+  if (auth.error) {
+    return auth.error;
+  }
+
+  const payload = parseRequestBody(event);
+  if (!payload || typeof payload !== 'object') {
+    return errorResponse(400, 'validation_failed', 'Request body must be valid JSON.');
+  }
+
+  if (typeof payload.username !== 'string' || !payload.username.trim()) {
+    return errorResponse(400, 'validation_failed', 'username is required.');
+  }
+
+  if (typeof payload.isTenantAdmin !== 'boolean') {
+    return errorResponse(400, 'validation_failed', 'isTenantAdmin must be a boolean.');
+  }
+
+  const username = payload.username.trim();
+
+  try {
+    const groups = await listUserGroups(username);
+    const belongsToTenant = groups.includes(auth.tenantGroup) || groups.includes(auth.adminGroup);
+    if (!belongsToTenant) {
+      return errorResponse(404, 'not_found', 'User is not in the tenant scope.');
+    }
+
+    if (payload.isTenantAdmin) {
+      await cognitoClient.send(new AdminAddUserToGroupCommand({
+        GroupName: auth.adminGroup,
+        Username: username,
+        UserPoolId: userPoolId
+      }));
+    } else {
+      await cognitoClient.send(new AdminRemoveUserFromGroupCommand({
+        GroupName: auth.adminGroup,
+        Username: username,
+        UserPoolId: userPoolId
+      }));
+    }
+
+    const workspace = await buildTenantWorkspace(auth.tenantGroup, auth.adminGroup);
+    return response(200, {
+      ...workspace,
+      events: [
+        {
+          id: `evt-${Date.now()}`,
+          message: `${username} ${payload.isTenantAdmin ? 'granted' : 'removed from'} tenant admin role.`,
+          actor: auth.actor,
+          timestamp: new Date().toISOString(),
+          severity: payload.isTenantAdmin ? 'info' : 'warning'
+        }
+      ]
+    });
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'tenant_admin_role_update_failed',
+      tenantGroup: auth.tenantGroup,
+      username,
+      actor: auth.actor,
+      error: toStructuredError(error)
+    }));
+    return errorResponse(500, 'internal_error', 'Unable to update tenant admin role.');
   }
 }
 
@@ -1333,6 +1577,14 @@ export const handler = async (event) => {
 
   const method = event.requestContext?.http?.method || '';
   const path = event.requestContext?.http?.path || event.rawPath || '';
+
+  if (method === 'GET' && path.endsWith('/api/admin/tenant/workspace')) {
+    return handleTenantWorkspace(event);
+  }
+
+  if (method === 'POST' && path.endsWith('/api/admin/tenant/users/admin-role')) {
+    return handleTenantAdminRoleUpdate(event);
+  }
 
   const workflowRoute = parseWorkflowRoute(method, path);
   if (workflowRoute) {

@@ -42,3 +42,23 @@ resource "aws_iam_role_policy" "proposal_submission_lambda_dynamodb" {
     ]
   })
 }
+resource "aws_iam_role_policy" "proposal_submission_lambda_cognito_admin" {
+  name = "hvac-proposal-submission-cognito-admin"
+  role = aws_iam_role.proposal_submission_lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:ListUsers",
+          "cognito-idp:AdminListGroupsForUser",
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:AdminRemoveUserFromGroup"
+        ]
+        Resource = aws_cognito_user_pool.user_pool.arn
+      }
+    ]
+  })
+}

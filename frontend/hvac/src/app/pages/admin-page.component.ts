@@ -44,6 +44,7 @@ import { TenantAdminService } from './tenant-admin.service';
                 </span>
               </div>
               <p>{{ user.email }}</p>
+              <small class="group-list">Groups: {{ user.groups.join(', ') || 'None' }}</small>
               <small>Last updated {{ user.lastModifiedAt | date: 'MMM d, h:mm a' }}</small>
             </div>
             <div class="row-actions">
@@ -214,6 +215,11 @@ import { TenantAdminService } from './tenant-admin.service';
     .user-row small {
       color: #6a8198;
       font-size: 0.76rem;
+    }
+
+    .group-list {
+      display: block;
+      margin-bottom: 0.15rem;
     }
 
     .admin-badge {

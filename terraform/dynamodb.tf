@@ -70,30 +70,62 @@ resource "aws_dynamodb_table" "proposal_submissions" {
 
   global_secondary_index {
     name            = "review_queue"
-    hash_key        = "review_queue_key"
-    range_key       = "review_queue_sort_key"
     projection_type = "ALL"
+
+    key_schema {
+      attribute_name = "review_queue_key"
+      key_type       = "HASH"
+    }
+
+    key_schema {
+      attribute_name = "review_queue_sort_key"
+      key_type       = "RANGE"
+    }
   }
 
   global_secondary_index {
     name            = "submitted_by"
-    hash_key        = "submitted_by_key"
-    range_key       = "submitted_by_sort_key"
     projection_type = "ALL"
+
+    key_schema {
+      attribute_name = "submitted_by_key"
+      key_type       = "HASH"
+    }
+
+    key_schema {
+      attribute_name = "submitted_by_sort_key"
+      key_type       = "RANGE"
+    }
   }
 
   global_secondary_index {
     name            = "opportunity_stage_latest"
-    hash_key        = "opportunity_key"
-    range_key       = "stage_updated_at"
     projection_type = "ALL"
+
+    key_schema {
+      attribute_name = "opportunity_key"
+      key_type       = "HASH"
+    }
+
+    key_schema {
+      attribute_name = "stage_updated_at"
+      key_type       = "RANGE"
+    }
   }
 
   global_secondary_index {
     name            = "triage_priority_queue"
-    hash_key        = "triage_queue_key"
-    range_key       = "triage_priority_sort"
     projection_type = "ALL"
+
+    key_schema {
+      attribute_name = "triage_queue_key"
+      key_type       = "HASH"
+    }
+
+    key_schema {
+      attribute_name = "triage_priority_sort"
+      key_type       = "RANGE"
+    }
   }
 
   point_in_time_recovery {

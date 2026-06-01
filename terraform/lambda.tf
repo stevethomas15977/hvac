@@ -23,6 +23,7 @@ resource "aws_lambda_function" "proposal_submission" {
     variables = {
       PROPOSAL_SUBMISSIONS_TABLE          = aws_dynamodb_table.proposal_submissions.name
       PROPOSAL_DEFAULT_TENANT_ID          = "development"
+      COGNITO_USER_POOL_ID                = aws_cognito_user_pool.user_pool.id
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
       PROPOSAL_WORKFLOW_CONTRACT_VERSION  = "v1"
       PROPOSAL_WORKFLOW_STUB_MODE         = "true"

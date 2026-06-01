@@ -32,8 +32,8 @@ export const appConfig: ApplicationConfig = {
     {
       provide: TENANT_ADMIN_API,
       useFactory: () => {
-        const mode = inject(RuntimeConfigService).config.app.proposalApiMode;
-        return mode === 'http'
+        const authMode = inject(RuntimeConfigService).config.app.authMode;
+        return authMode === 'cognito'
           ? inject(TenantAdminHttpApiService)
           : inject(TenantAdminMockApiService);
       }

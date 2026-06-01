@@ -108,3 +108,19 @@ resource "aws_apigatewayv2_route" "proposal_workflow_selection_decision" {
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
 }
+
+resource "aws_apigatewayv2_route" "tenant_admin_workspace" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "GET /api/admin/tenant/workspace"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
+
+resource "aws_apigatewayv2_route" "tenant_admin_update_role" {
+  api_id             = aws_apigatewayv2_api.proposal_submission.id
+  route_key          = "POST /api/admin/tenant/users/admin-role"
+  target             = "integrations/${aws_apigatewayv2_integration.proposal_submission.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.proposal_submission_cognito.id
+}
