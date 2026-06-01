@@ -62,16 +62,26 @@ jobs:
           frontend_base_url="${frontend_base_url%/}"
           proposal_wizard_api_base_url="${proposal_wizard_api_base_url%/}"
 
-          proposal_wizard_api_mode="mock"
-          if [[ -n "$proposal_wizard_api_base_url" ]]; then
-            proposal_wizard_api_mode="http"
-          fi
+          required_values=(
+            "$frontend_base_url"
+            "$cognito_user_pool_id"
+            "$cognito_user_pool_client_id"
+            "$cognito_domain"
+            "$proposal_wizard_api_base_url"
+          )
+
+          for value in "${required_values[@]}"; do
+            if [[ -z "$value" ]]; then
+              echo "Required runtime configuration value is missing for environment '${{ github.event.inputs.environment }}'."
+              exit 1
+            fi
+          done
 
           cat > public/app-config.json <<EOF
           {
             "app": {
               "proposalApiMode": "mock",
-              "proposalWizardApiMode": "${proposal_wizard_api_mode}",
+              "proposalWizardApiMode": "http",
               "proposalWizardApiBaseUrl": "${proposal_wizard_api_base_url}",
               "authMode": "cognito"
             },
