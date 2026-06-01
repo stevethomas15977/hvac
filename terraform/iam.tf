@@ -85,7 +85,6 @@ resource "aws_iam_role_policy" "tenant_admin_lambda_cognito_admin" {
       {
         Effect = "Allow"
         Action = [
-          "cognito-idp:ListUsers",
           "cognito-idp:ListUsersInGroup",
           "cognito-idp:AdminListGroupsForUser",
           "cognito-idp:AdminUpdateUserAttributes"

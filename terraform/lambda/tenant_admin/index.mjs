@@ -2,9 +2,16 @@ import {
   AdminListGroupsForUserCommand,
   AdminUpdateUserAttributesCommand,
   CognitoIdentityProviderClient,
-  ListUsersCommand,
   ListUsersInGroupCommand
 } from '@aws-sdk/client-cognito-identity-provider';
+import {
+  parseClaimGroups,
+  sanitizeGroupName,
+  toTenantKey,
+  resolveTenantAdminScope,
+  isUserInTenantScope,
+  resolveTenantGroupCandidates
+} from './group-scope.mjs';
 
 const cognitoClient = new CognitoIdentityProviderClient({});
 const userPoolId = process.env.COGNITO_USER_POOL_ID || '';
@@ -85,63 +92,6 @@ function parseRequestBody(event) {
   }
 }
 
-function parseClaimGroups(event) {
-  const claims = getJwtClaims(event);
-  const groupsClaim = claims?.['cognito:groups'];
-
-  if (Array.isArray(groupsClaim)) {
-    return groupsClaim
-      .map((value) => sanitizeGroupName(value))
-      .filter(Boolean);
-  }
-
-  if (typeof groupsClaim === 'string' && groupsClaim.trim()) {
-    try {
-      const parsed = JSON.parse(groupsClaim);
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((value) => sanitizeGroupName(value))
-          .filter(Boolean);
-      }
-
-      if (typeof parsed === 'string' && parsed.trim()) {
-        return [sanitizeGroupName(parsed)].filter(Boolean);
-      }
-    } catch {
-      return groupsClaim
-        .split(',')
-        .map((value) => sanitizeGroupName(value))
-        .filter(Boolean);
-    }
-  }
-
-  return [];
-}
-
-function sanitizeGroupName(value) {
-  if (typeof value !== 'string') {
-    return '';
-  }
-
-  let normalized = value.trim();
-  if (!normalized) {
-    return '';
-  }
-
-  if (normalized.startsWith('[') && normalized.endsWith(']')) {
-    normalized = normalized.slice(1, -1).trim();
-  }
-
-  if (
-    (normalized.startsWith('"') && normalized.endsWith('"'))
-    || (normalized.startsWith("'") && normalized.endsWith("'"))
-  ) {
-    normalized = normalized.slice(1, -1).trim();
-  }
-
-  return normalized;
-}
-
 function resolveCognitoUsername(event) {
   const claims = getJwtClaims(event);
   const username = claims?.['cognito:username'];
@@ -151,61 +101,6 @@ function resolveCognitoUsername(event) {
   }
 
   return null;
-}
-
-function resolveTenantAdminScope(groups) {
-  const nonEmptyGroups = groups.filter((group) => typeof group === 'string' && group.trim());
-  if (nonEmptyGroups.length === 0) {
-    return null;
-  }
-
-  const tenantGroups = nonEmptyGroups.filter((group) => !group.endsWith('_admin'));
-  const tenantGroup = tenantGroups[0] ?? nonEmptyGroups[0];
-  const tenantKey = toTenantKey(tenantGroup);
-
-  if (!tenantKey) {
-    return null;
-  }
-
-  return {
-    tenantGroup,
-    tenantKey
-  };
-}
-
-function toTenantKey(groupName) {
-  const trimmed = sanitizeGroupName(groupName);
-  if (!trimmed) {
-    return null;
-  }
-
-  const withoutAdminSuffix = trimmed.endsWith('_admin')
-    ? trimmed.slice(0, -'_admin'.length)
-    : trimmed;
-
-  const withoutTenantPrefix = withoutAdminSuffix.startsWith('tenant_')
-    ? withoutAdminSuffix.slice('tenant_'.length)
-    : withoutAdminSuffix;
-
-  const tenantKey = withoutTenantPrefix.trim();
-  return tenantKey ? tenantKey.toLowerCase() : null;
-}
-
-function isUserInTenantScope(groups, tenantKey) {
-  return groups.some((group) => toTenantKey(group) === tenantKey);
-}
-
-function resolveTenantGroupCandidates(tenantGroup, tenantKey) {
-  const candidates = [
-    tenantGroup,
-    tenantKey,
-    `tenant_${tenantKey}`,
-    `${tenantKey}_admin`,
-    `tenant_${tenantKey}_admin`
-  ];
-
-  return Array.from(new Set(candidates.filter((group) => typeof group === 'string' && group.trim())))
-    .map((group) => group.trim());
 }
 
 function toBooleanClaim(value) {
@@ -220,24 +115,6 @@ function hasTenantAdminClaim(event) {
 function hasTenantAdminAttribute(user) {
   const tenantAdminAttribute = user.Attributes?.find((attribute) => attribute.Name === 'custom:tenant_admin');
   return toBooleanClaim(tenantAdminAttribute?.Value);
-}
-
-async function listAllPoolUsers() {
-  const users = [];
-  let paginationToken;
-
-  do {
-    const page = await cognitoClient.send(new ListUsersCommand({
-      UserPoolId: userPoolId,
-      PaginationToken: paginationToken,
-      Limit: 60
-    }));
-
-    users.push(...(page.Users || []));
-    paginationToken = page.PaginationToken;
-  } while (paginationToken);
-
-  return users;
 }
 
 async function listUsersInGroup(groupName) {
@@ -365,11 +242,6 @@ async function buildTenantWorkspace(tenantGroup) {
 
   const users = await listTenantScopedUsers(tenantGroup, tenantKey);
 
-  if (users.length === 0) {
-    const fallbackUsers = await listAllPoolUsers();
-    users.push(...fallbackUsers);
-  }
-
   const tenantUsers = await Promise.all(users.map(async (user) => {
     const username = user.Username;
     if (!username) {
@@ -496,4 +368,12 @@ export const handler = async (event) => {
   }
 
   return response(404, { message: 'Not found.' });
+};
+
+export const __test = {
+  parseClaimGroups,
+  sanitizeGroupName,
+  toTenantKey,
+  resolveTenantAdminScope,
+  resolveTenantGroupCandidates
 };
