@@ -63,10 +63,48 @@ export class TenantAdminService {
   }
 
   private toErrorMessage(error: unknown): string {
+    const nestedMessage = this.getNestedApiErrorMessage(error);
+    if (nestedMessage) {
+      return nestedMessage;
+    }
+
     if (error instanceof Error && error.message) {
       return error.message;
     }
 
     return 'Unable to process tenant administration action.';
+  }
+
+  private getNestedApiErrorMessage(error: unknown): string | null {
+    if (!error || typeof error !== 'object') {
+      return null;
+    }
+
+    const errorWithPayload = error as {
+      error?: {
+        error?: {
+          message?: unknown;
+        };
+        message?: unknown;
+      };
+      message?: unknown;
+    };
+
+    const apiErrorMessage = errorWithPayload.error?.error?.message;
+    if (typeof apiErrorMessage === 'string' && apiErrorMessage.trim()) {
+      return apiErrorMessage;
+    }
+
+    const topLevelErrorMessage = errorWithPayload.error?.message;
+    if (typeof topLevelErrorMessage === 'string' && topLevelErrorMessage.trim()) {
+      return topLevelErrorMessage;
+    }
+
+    const fallbackMessage = errorWithPayload.message;
+    if (typeof fallbackMessage === 'string' && fallbackMessage.trim()) {
+      return fallbackMessage;
+    }
+
+    return null;
   }
 }
