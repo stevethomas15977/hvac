@@ -87,8 +87,7 @@ resource "aws_iam_role_policy" "tenant_admin_lambda_cognito_admin" {
         Action = [
           "cognito-idp:ListUsers",
           "cognito-idp:AdminListGroupsForUser",
-          "cognito-idp:AdminAddUserToGroup",
-          "cognito-idp:AdminRemoveUserFromGroup"
+          "cognito-idp:AdminUpdateUserAttributes"
         ]
         Resource = aws_cognito_user_pool.user_pool.arn
       }

@@ -1,7 +1,6 @@
 import {
-  AdminAddUserToGroupCommand,
   AdminListGroupsForUserCommand,
-  AdminRemoveUserFromGroupCommand,
+  AdminUpdateUserAttributesCommand,
   CognitoIdentityProviderClient,
   ListUsersCommand
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -119,20 +118,31 @@ function resolveCognitoUsername(event) {
 }
 
 function resolveTenantAdminScope(groups) {
-  const adminGroups = groups.filter((group) => group.endsWith('_admin'));
-  if (adminGroups.length === 0) {
+  const nonEmptyGroups = groups.filter((group) => typeof group === 'string' && group.trim());
+  if (nonEmptyGroups.length === 0) {
     return null;
   }
 
-  const groupSet = new Set(groups);
-  const pairedAdminGroup = adminGroups.find((group) => groupSet.has(group.replace(/_admin$/, '')));
-  const adminGroup = pairedAdminGroup ?? adminGroups[0];
-  const tenantGroup = adminGroup.replace(/_admin$/, '');
+  const tenantGroups = nonEmptyGroups.filter((group) => !group.endsWith('_admin'));
+  const tenantGroup = tenantGroups[0] ?? nonEmptyGroups[0];
 
   return {
-    tenantGroup,
-    adminGroup
+    tenantGroup
   };
+}
+
+function toBooleanClaim(value) {
+  return value === true || value === 'true' || value === 'yes';
+}
+
+function hasTenantAdminClaim(event) {
+  const claims = getJwtClaims(event);
+  return toBooleanClaim(claims?.['custom:tenant_admin']);
+}
+
+function hasTenantAdminAttribute(user) {
+  const tenantAdminAttribute = user.Attributes?.find((attribute) => attribute.Name === 'custom:tenant_admin');
+  return toBooleanClaim(tenantAdminAttribute?.Value);
 }
 
 async function listAllPoolUsers() {
@@ -187,9 +197,15 @@ async function requireTenantAdmin(event) {
   const scope = resolveTenantAdminScope(groups);
   if (!scope) {
     return {
-      error: errorResponse(403, 'forbidden', 'Tenant admin group membership is required.', {
+      error: errorResponse(403, 'forbidden', 'Tenant group membership is required.', {
         groups
       })
+    };
+  }
+
+  if (!hasTenantAdminClaim(event)) {
+    return {
+      error: errorResponse(403, 'forbidden', 'Tenant admin attribute is required.')
     };
   }
 
@@ -216,7 +232,7 @@ function toIsoDate(value) {
   return new Date().toISOString();
 }
 
-async function buildTenantWorkspace(tenantGroup, adminGroup) {
+async function buildTenantWorkspace(tenantGroup) {
   const users = await listAllPoolUsers();
   const tenantUsers = await Promise.all(users.map(async (user) => {
     const username = user.Username;
@@ -225,7 +241,7 @@ async function buildTenantWorkspace(tenantGroup, adminGroup) {
     }
 
     const groups = await listUserGroups(username);
-    const belongsToTenant = groups.includes(tenantGroup) || groups.includes(adminGroup);
+    const belongsToTenant = groups.includes(tenantGroup);
     if (!belongsToTenant) {
       return null;
     }
@@ -234,7 +250,7 @@ async function buildTenantWorkspace(tenantGroup, adminGroup) {
       username,
       email: getUserEmail(user),
       groups,
-      isTenantAdmin: groups.includes(adminGroup),
+      isTenantAdmin: hasTenantAdminAttribute(user),
       lastModifiedAt: toIsoDate(user.UserLastModifiedDate)
     };
   }));
@@ -255,7 +271,7 @@ async function handleTenantWorkspace(event) {
   }
 
   try {
-    return response(200, await buildTenantWorkspace(auth.tenantGroup, auth.adminGroup));
+    return response(200, await buildTenantWorkspace(auth.tenantGroup));
   } catch (error) {
     console.error(JSON.stringify({
       event: 'tenant_admin_workspace_query_failed',
@@ -290,26 +306,23 @@ async function handleTenantAdminRoleUpdate(event) {
 
   try {
     const groups = await listUserGroups(username);
-    const belongsToTenant = groups.includes(auth.tenantGroup) || groups.includes(auth.adminGroup);
+    const belongsToTenant = groups.includes(auth.tenantGroup);
     if (!belongsToTenant) {
       return errorResponse(404, 'not_found', 'User is not in the tenant scope.');
     }
 
-    if (payload.isTenantAdmin) {
-      await cognitoClient.send(new AdminAddUserToGroupCommand({
-        GroupName: auth.adminGroup,
-        Username: username,
-        UserPoolId: userPoolId
-      }));
-    } else {
-      await cognitoClient.send(new AdminRemoveUserFromGroupCommand({
-        GroupName: auth.adminGroup,
-        Username: username,
-        UserPoolId: userPoolId
-      }));
-    }
+    await cognitoClient.send(new AdminUpdateUserAttributesCommand({
+      Username: username,
+      UserPoolId: userPoolId,
+      UserAttributes: [
+        {
+          Name: 'custom:tenant_admin',
+          Value: payload.isTenantAdmin ? 'true' : 'false'
+        }
+      ]
+    }));
 
-    const workspace = await buildTenantWorkspace(auth.tenantGroup, auth.adminGroup);
+    const workspace = await buildTenantWorkspace(auth.tenantGroup);
     return response(200, {
       ...workspace,
       events: [

@@ -91,20 +91,16 @@ export class AuthService {
     const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
     const tenantAdmin = this.toBooleanClaimValue(session.tokens?.idToken?.payload['custom:tenant_admin']);
-    this.isTenantAdmin.set(tenantAdmin);
-    return tenantAdmin;
+    const groups = this.extractGroupsClaim(session.tokens?.idToken?.payload['cognito:groups']);
+    const hasAccess = tenantAdmin && groups.length > 0;
+    this.isTenantAdmin.set(hasAccess);
+    return hasAccess;
   }
 
   async getUserGroups(): Promise<string[]> {
     const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
-    const groups = session.tokens?.idToken?.payload['cognito:groups'];
-
-    if (Array.isArray(groups)) {
-      return groups.filter((value): value is string => typeof value === 'string');
-    }
-
-    return [];
+    return this.extractGroupsClaim(session.tokens?.idToken?.payload['cognito:groups']);
   }
 
   async hasAnyGroup(requiredGroups: string[]): Promise<boolean> {
@@ -130,6 +126,28 @@ export class AuthService {
 
   private toBooleanClaimValue(value: unknown): boolean {
     return value === true || value === 'true' || value === 'yes';
+  }
+
+  private extractGroupsClaim(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+        }
+      } catch {
+        return value
+          .split(',')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0);
+      }
+    }
+
+    return [];
   }
 
   private toErrorMessage(error: unknown): string {
