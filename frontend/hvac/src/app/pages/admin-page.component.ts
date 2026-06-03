@@ -11,7 +11,7 @@ import { TenantAdminService } from './tenant-admin.service';
       <header class="panel header-panel">
         <div>
           <h1>Tenant Administration</h1>
-          <p>Manage tenant users and admin role assignment for the current Cognito group.</p>
+          <p>Manage tenant user, manufacturer equipment knowledge bases, and workspace settings.</p>
           <p class="inline-message" *ngIf="service.isLoading()">Syncing tenant workspace...</p>
           <p class="inline-message error" *ngIf="service.errorMessage()">{{ service.errorMessage() }}</p>
         </div>

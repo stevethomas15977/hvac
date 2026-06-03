@@ -31,6 +31,17 @@ data "aws_iam_policy_document" "proposal_workflow_lambda_assume_role" {
   }
 }
 
+data "aws_iam_policy_document" "project_kb_lambda_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
 resource "aws_iam_role" "proposal_submission_lambda" {
   name               = "hvac-proposal-submission-lambda-role"
   assume_role_policy = data.aws_iam_policy_document.proposal_submission_lambda_assume_role.json
@@ -100,8 +111,18 @@ resource "aws_iam_role" "proposal_workflow_lambda" {
   assume_role_policy = data.aws_iam_policy_document.proposal_workflow_lambda_assume_role.json
 }
 
+resource "aws_iam_role" "project_kb_lambda" {
+  name               = "hvac-project-kb-lambda-role"
+  assume_role_policy = data.aws_iam_policy_document.project_kb_lambda_assume_role.json
+}
+
 resource "aws_iam_role_policy_attachment" "proposal_workflow_lambda_basic" {
   role       = aws_iam_role.proposal_workflow_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "project_kb_lambda_basic" {
+  role       = aws_iam_role.project_kb_lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
@@ -122,6 +143,24 @@ resource "aws_iam_role_policy" "proposal_workflow_lambda_dynamodb" {
           aws_dynamodb_table.proposal_submissions.arn,
           "${aws_dynamodb_table.proposal_submissions.arn}/index/*"
         ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "project_kb_lambda_s3vectors" {
+  name = "hvac-project-kb-s3vectors-access"
+  role = aws_iam_role.project_kb_lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3vectors:CreateVectorBucket"
+        ]
+        Resource = "*"
       }
     ]
   })
