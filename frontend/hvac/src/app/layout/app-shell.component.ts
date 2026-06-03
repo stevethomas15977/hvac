@@ -14,7 +14,7 @@ import { AuthService } from '../core/auth/auth.service';
           <a routerLink="/app/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
           <a routerLink="/app/proposals" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Proposals</a>
           <a routerLink="/app/proposals/new" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">New Proposal</a>
-          <a *ngIf="auth.isTenantAdmin()" routerLink="/app/admin" routerLinkActive="active">Admin</a>
+          <a *ngIf="auth.isTenantAdmin()" routerLink="/app/admin" routerLinkActive="active">User Admin</a>
         </nav>
         <div class="profile-actions">
           <span class="username">{{ auth.currentUsername() }}</span>
