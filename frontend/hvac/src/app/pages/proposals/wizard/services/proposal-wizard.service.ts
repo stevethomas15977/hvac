@@ -1,6 +1,6 @@
 import { Inject, Injectable, Injector, computed, effect, inject, signal } from '@angular/core';
 import { Observable, finalize, of, switchMap } from 'rxjs';
-import { AuthService } from '../core/auth/auth.service';
+import { AuthService } from '../../../../core/auth/auth.service';
 import {
   PROPOSAL_WIZARD_API,
   ProposalWizardApi,
@@ -11,7 +11,7 @@ import {
   ProposalWizardRecentSubmission,
   ProposalWizardSubmissionReceipt,
   ProposalWorkflowTriageResult
-} from './proposal-wizard-api';
+} from '../api/proposal-wizard-api';
 
 export type ProposalSourceType = 'email' | 'procore' | 'constructconnect' | 'shared_drive' | 'dropbox' | 'direct_link' | 'other';
 export type BidVisibility = 'open_bid' | 'closed_bid' | 'invited' | 'basis_of_design' | 'unknown';

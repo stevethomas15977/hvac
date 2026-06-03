@@ -5,7 +5,7 @@ import type {
   ProposalDecisionPreview,
   ProposalRecommendationStatus,
   ProposalWizardState
-} from './proposal-wizard.service';
+} from '../services/proposal-wizard.service';
 
 export interface ProposalWizardSubmissionPayload {
   state: ProposalWizardState;

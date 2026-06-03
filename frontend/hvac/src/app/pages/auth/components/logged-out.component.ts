@@ -1,14 +1,17 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { AuthService } from '../core/auth/auth.service';
+import { AuthService } from '../../../core/auth/auth.service';
 
 @Component({
-  selector: 'app-auth-callback',
+  selector: 'app-logged-out',
   template: `
     <main class="auth-flow">
       <section class="auth-card">
-        <h1>Finishing sign in</h1>
-        <p>{{ message() }}</p>
+        <h1>Signed out</h1>
+        <p>You are currently signed out from HVAC Portal.</p>
+        <button type="button" (click)="onSignIn()" [disabled]="auth.isLoading()">
+          {{ auth.isLoading() ? 'Redirecting...' : 'Sign in again' }}
+        </button>
       </section>
     </main>
   `,
@@ -34,10 +37,12 @@ import { AuthService } from '../core/auth/auth.service';
       box-shadow: 0 12px 30px rgba(34, 56, 84, 0.12);
       padding: 1.25rem;
       width: min(420px, 100%);
+      display: grid;
+      gap: 0.9rem;
     }
 
     h1 {
-      margin: 0 0 0.65rem;
+      margin: 0;
       font-size: 1.25rem;
       color: #1f3b58;
     }
@@ -46,22 +51,37 @@ import { AuthService } from '../core/auth/auth.service';
       margin: 0;
       color: #35516e;
     }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 0.7rem 1rem;
+      font-size: 0.95rem;
+      background: #1a73b8;
+      color: #ffffff;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
   `
 })
-export class AuthCallbackComponent implements OnInit {
-  private readonly auth = inject(AuthService);
+export class LoggedOutComponent {
+  readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 
-  readonly message = signal('Validating session...');
+  constructor() {
+    this.auth.initialize();
+  }
 
-  async ngOnInit(): Promise<void> {
-    await this.auth.initialize();
-
+  async onSignIn(): Promise<void> {
     if (this.auth.isAuthenticated()) {
       await this.router.navigateByUrl('/app/dashboard');
       return;
     }
 
-    this.message.set('Sign-in was not completed. Please try again.');
+    await this.auth.startHostedSignIn();
   }
 }

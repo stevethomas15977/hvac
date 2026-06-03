@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable, delay, of, throwError } from 'rxjs';
-import { TenantAdminApi } from './tenant-admin-api';
-import { TenantAdminUpdatePayload, TenantAdminWorkspace } from './tenant-admin.models';
+import { TenantAdminApi } from '../api/tenant-admin-api';
+import { TenantAdminUpdatePayload, TenantAdminWorkspace } from '../models/tenant-admin.models';
 
 @Injectable({ providedIn: 'root' })
 export class TenantAdminMockApiService implements TenantAdminApi {

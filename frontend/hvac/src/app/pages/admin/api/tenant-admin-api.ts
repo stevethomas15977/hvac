@@ -1,6 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { Observable } from 'rxjs';
-import { TenantAdminUpdatePayload, TenantAdminWorkspace } from './tenant-admin.models';
+import { TenantAdminUpdatePayload, TenantAdminWorkspace } from '../models/tenant-admin.models';
 
 export interface TenantAdminApi {
   getWorkspace(): Observable<TenantAdminWorkspace>;

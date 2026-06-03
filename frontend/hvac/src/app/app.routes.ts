@@ -6,11 +6,11 @@ import { AppShellComponent } from './layout/app-shell.component';
 export const routes: Routes = [
 	{
 		path: 'callback',
-		loadComponent: () => import('./pages/auth-callback.component').then((module) => module.AuthCallbackComponent)
+		loadComponent: () => import('./pages/auth/components/auth-callback.component').then((module) => module.AuthCallbackComponent)
 	},
 	{
 		path: 'logout',
-		loadComponent: () => import('./pages/logged-out.component').then((module) => module.LoggedOutComponent)
+		loadComponent: () => import('./pages/auth/components/logged-out.component').then((module) => module.LoggedOutComponent)
 	},
 	{
 		path: 'app',
@@ -19,20 +19,20 @@ export const routes: Routes = [
 		children: [
 			{
 				path: 'dashboard',
-				loadComponent: () => import('./pages/dashboard-home.component').then((module) => module.DashboardHomeComponent)
+				loadComponent: () => import('./pages/dashboard/components/dashboard-home.component').then((module) => module.DashboardHomeComponent)
 			},
 			{
 				path: 'proposals',
-				loadComponent: () => import('./pages/proposals-page.component').then((module) => module.ProposalsPageComponent)
+				loadComponent: () => import('./pages/proposals/components/proposals-page.component').then((module) => module.ProposalsPageComponent)
 			},
 			{
 				path: 'proposals/new',
-				loadComponent: () => import('./pages/proposals-new-wizard.component').then((module) => module.ProposalsNewWizardComponent)
+				loadComponent: () => import('./pages/proposals/wizard/components/proposals-new-wizard.component').then((module) => module.ProposalsNewWizardComponent)
 			},
 			{
 				path: 'admin',
 				canActivate: [tenantAdminGuard],
-				loadComponent: () => import('./pages/admin-page.component').then((module) => module.AdminPageComponent)
+				loadComponent: () => import('./pages/admin/components/admin-page.component').then((module) => module.AdminPageComponent)
 			},
 			{
 				path: '',

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable, delay, of, throwError } from 'rxjs';
-import { ProposalIntakeApi, QualificationDecisionPayload, SelectionDecisionPayload } from './proposal-intake-api';
-import { BidOpportunity, IntakeEvent } from './proposals-page.models';
+import { ProposalIntakeApi, QualificationDecisionPayload, SelectionDecisionPayload } from '../api/proposal-intake-api';
+import { BidOpportunity, IntakeEvent } from '../models/proposals-page.models';
 import { MOCK_OPPORTUNITIES } from './proposals-page.mock';
 
 @Injectable({ providedIn: 'root' })

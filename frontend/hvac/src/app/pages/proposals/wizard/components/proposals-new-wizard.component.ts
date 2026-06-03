@@ -1,7 +1,7 @@
 import { DecimalPipe, NgClass, NgFor, NgIf, NgSwitch, NgSwitchCase } from '@angular/common';
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ProposalWizardService } from './proposal-wizard.service';
+import { ProposalWizardService } from '../services/proposal-wizard.service';
 
 interface WizardStep {
   id: number;

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { buildCognitoConfig, isCognitoConfigured, type RuntimeCognitoSettings } from '../auth/cognito.config';
-import { ProposalAppConfig } from '../../pages/proposals-page.models';
+import { ProposalAppConfig } from '../../pages/proposals/models/proposals-page.models';
 
 export interface RuntimeAppConfig {
   cognito: RuntimeCognitoSettings;

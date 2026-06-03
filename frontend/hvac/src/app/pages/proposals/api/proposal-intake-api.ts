@@ -1,6 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { Observable } from 'rxjs';
-import { BidOpportunity } from './proposals-page.models';
+import { BidOpportunity } from '../models/proposals-page.models';
 
 export interface QualificationDecisionPayload {
   decision: 'go' | 'no_go';

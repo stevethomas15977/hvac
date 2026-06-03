@@ -1,8 +1,8 @@
 import { DatePipe, DecimalPipe, NgClass, NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault, TitleCasePipe, UpperCasePipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { BidOpportunity, IntakeStatus, QualificationStatus, SelectionStatus } from './proposals-page.models';
-import { ProposalsIntakeService } from './proposals-intake.service';
+import { BidOpportunity, IntakeStatus, QualificationStatus, SelectionStatus } from '../models/proposals-page.models';
+import { ProposalsIntakeService } from '../services/proposals-intake.service';
 
 type HelpTopic = 'intake' | 'qualification' | 'selection';
 

@@ -1,7 +1,7 @@
 import { computed, Inject, Injectable, signal } from '@angular/core';
 import { finalize } from 'rxjs';
-import { TENANT_ADMIN_API, TenantAdminApi } from './tenant-admin-api';
-import { TenantAdminWorkspace, TenantUser } from './tenant-admin.models';
+import { TENANT_ADMIN_API, TenantAdminApi } from '../api/tenant-admin-api';
+import { TenantAdminWorkspace, TenantUser } from '../models/tenant-admin.models';
 
 @Injectable({ providedIn: 'root' })
 export class TenantAdminService {

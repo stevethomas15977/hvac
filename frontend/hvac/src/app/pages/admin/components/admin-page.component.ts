@@ -1,7 +1,7 @@
 import { DatePipe, NgClass, NgFor, NgIf } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { TenantAdminService } from './tenant-admin.service';
+import { TenantAdminService } from '../services/tenant-admin.service';
 
 @Component({
   selector: 'app-admin-page',

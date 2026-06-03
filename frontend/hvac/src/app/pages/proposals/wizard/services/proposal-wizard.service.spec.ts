@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { of } from 'rxjs';
-import { AuthService } from '../core/auth/auth.service';
+import { AuthService } from '../../../../core/auth/auth.service';
 import {
   PROPOSAL_WIZARD_API,
   ProposalWizardApi,
@@ -12,7 +12,7 @@ import {
   ProposalWizardSubmissionPayload,
   ProposalWizardSubmissionReceipt,
   ProposalWorkflowTriageRunResponse
-} from './proposal-wizard-api';
+} from '../api/proposal-wizard-api';
 import { ProposalDocumentDraft, ProposalWizardService } from './proposal-wizard.service';
 
 class ProposalWizardApiMock implements ProposalWizardApi {

@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { from, Observable } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
-import { RuntimeConfigService } from '../core/config/runtime-config.service';
+import { RuntimeConfigService } from '../../../../core/config/runtime-config.service';
 import {
   ProposalWizardApi,
   ProposalWorkflowQualificationRunRequest,
@@ -16,7 +16,7 @@ import {
   ProposalWizardSubmissionReceipt,
   ProposalWorkflowTriageRunRequest,
   ProposalWorkflowTriageRunResponse
-} from './proposal-wizard-api';
+} from '../api/proposal-wizard-api';
 
 @Injectable({ providedIn: 'root' })
 export class ProposalWizardHttpApiService implements ProposalWizardApi {

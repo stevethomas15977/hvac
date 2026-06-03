@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ProposalIntakeApi, QualificationDecisionPayload, SelectionDecisionPayload } from './proposal-intake-api';
-import { BidOpportunity } from './proposals-page.models';
+import { ProposalIntakeApi, QualificationDecisionPayload, SelectionDecisionPayload } from '../api/proposal-intake-api';
+import { BidOpportunity } from '../models/proposals-page.models';
 
 @Injectable({ providedIn: 'root' })
 export class ProposalsIntakeHttpApiService implements ProposalIntakeApi {

@@ -2,9 +2,9 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { from, Observable } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
-import { RuntimeConfigService } from '../core/config/runtime-config.service';
-import { TenantAdminApi } from './tenant-admin-api';
-import { TenantAdminUpdatePayload, TenantAdminWorkspace } from './tenant-admin.models';
+import { RuntimeConfigService } from '../../../core/config/runtime-config.service';
+import { TenantAdminApi } from '../api/tenant-admin-api';
+import { TenantAdminUpdatePayload, TenantAdminWorkspace } from '../models/tenant-admin.models';
 
 @Injectable({ providedIn: 'root' })
 export class TenantAdminHttpApiService implements TenantAdminApi {

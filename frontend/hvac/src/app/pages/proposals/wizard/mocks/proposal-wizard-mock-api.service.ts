@@ -15,7 +15,7 @@ import {
   ProposalWizardSubmissionReceipt,
   ProposalWorkflowTriageRunRequest,
   ProposalWorkflowTriageRunResponse
-} from './proposal-wizard-api';
+} from '../api/proposal-wizard-api';
 
 @Injectable({ providedIn: 'root' })
 export class ProposalWizardMockApiService implements ProposalWizardApi {

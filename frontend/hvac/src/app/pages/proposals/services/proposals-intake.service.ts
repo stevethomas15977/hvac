@@ -1,7 +1,7 @@
 import { computed, Inject, Injectable, signal } from '@angular/core';
 import { finalize } from 'rxjs';
-import { PROPOSAL_INTAKE_API, ProposalIntakeApi, QualificationDecisionPayload, SelectionDecisionPayload } from './proposal-intake-api';
-import { BidOpportunity } from './proposals-page.models';
+import { PROPOSAL_INTAKE_API, ProposalIntakeApi, QualificationDecisionPayload, SelectionDecisionPayload } from '../api/proposal-intake-api';
+import { BidOpportunity } from '../models/proposals-page.models';
 
 @Injectable({ providedIn: 'root' })
 export class ProposalsIntakeService {

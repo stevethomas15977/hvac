@@ -1,4 +1,4 @@
-import { BidOpportunity } from './proposals-page.models';
+import { BidOpportunity } from '../models/proposals-page.models';
 
 export const MOCK_OPPORTUNITIES: BidOpportunity[] = [
   {
